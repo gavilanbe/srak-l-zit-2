@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Srak l zit — سراق الزيت</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #07080f; overflow: hidden; }
+  #stage { position: fixed; inset: 0; overflow: hidden; }
+  #view canvas, #hud { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #hud { left: 0; top: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="view"></div><canvas id="hud"></canvas></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
