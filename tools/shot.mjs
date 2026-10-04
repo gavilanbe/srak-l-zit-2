@@ -13,7 +13,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log(`[${m.type()}]`, m.text()); });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 await page.goto('http://localhost:8766/');
-await page.waitForTimeout(700);
+await page.waitForFunction(() => window.game, null, { timeout: 8000 }).catch(() => console.log('[sin game]')); await page.waitForTimeout(300);
 if (js) console.log('→', JSON.stringify(await page.evaluate(js)));
 await page.waitForTimeout(+wait);
 await page.screenshot({ path: out });

@@ -1,12 +1,14 @@
-// Srak l zit — سراق الزيت. Una cucaracha marroquí roba el aceite de la cocina de noche.
-import { THREE, Gfx, basic, sph, cyl, put, GHOST } from './gfx.js';
-import { buildWorld, ROOM } from './world.js';
-import { makeRoach, animRoach, makeGranny, makeSlipper, makeCat, animCat } from './actors.js';
+// Srak l zit — سراق الزيت. Una cucaracha marroquí roba el aceite de toda la casa, noche a noche.
+import { THREE, Gfx, basic, sph, put, GHOST } from './gfx.js';
+import { buildLevels, ROOM } from './world.js';
+import { makeRoach, animRoach, makeGranny, makeSlipper, makeCat, animCat, makeChicken, animChicken } from './actors.js';
 import { Hud, INK, GOLD, CREAM } from './hud.js';
+import { drawCity, drawMoon, drawRoof, drawLogo, drawMap } from './art.js';
 import { Sfx } from './audio.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (a) => a[Math.random() * a.length | 0];
+const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const dist = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
@@ -17,22 +19,41 @@ const ARABIC = 'bold {s}px "Geeza Pro", "Noto Naskh Arabic", "Segoe UI", sans-se
 const gfx = new Gfx(document.getElementById('view'));
 const hud = new Hud(document.getElementById('hud'));
 const sfx = new Sfx();
-const world = buildWorld(gfx.scene);
 const scene = gfx.scene;
+const LV = buildLevels(scene);
+let world = LV.levels[0];
 
 const CARRY_MAX = 3, VISION = 10.5, VISION_HALF = 0.6, ROACH_R = 0.55, GRANNY_R = 1.35;
 const DASH_T = 0.26, DASH_CD = 1.4, DASH_SPEED = 17;
 
+// La campaña: dos noches por sitio. Después del hanout, la casa se repite más difícil.
+const PLAN = [
+  { lv: 0, quota: 6, news: 'ESPACIO: vuelo corto · E: suelta zit y que resbale' },
+  { lv: 0, quota: 8, cat: true, glue: 2, bottle: true, news: 'Nuevo: Mchicha, el gato. A oscuras, no hagas ruido' },
+  { lv: 1, quota: 6, glue: 2, news: 'Jeddi oye todo. Corre o vuela cerca de él y se despierta' },
+  { lv: 1, quota: 8, cat: true, glue: 3, news: 'Mchicha se ha colado en el salón' },
+  { lv: 2, quota: 6, cat: true, chicks: 2, enemy: false, news: 'Las gallinas te ven de cerca. Escóndete o vuela' },
+  { lv: 2, quota: 8, chicks: 3, glue: 2, news: 'La jadda sale a regar. Y trae el Baygon' },
+  { lv: 3, quota: 8, snaps: 3, news: 'Cepos: pásalos volando o rodéalos' },
+  { lv: 3, quota: 10, snaps: 5, glue: 3, news: 'El último golpe. Si Brahim está de mal humor' },
+];
+function plan(n) {
+  const i = (n - 1) % PLAN.length, loop = Math.floor((n - 1) / PLAN.length);
+  return { ...PLAN[i], loop, tier: Math.min(5, i + 1) + loop * 2, quota: PLAN[i].quota + loop * 2 };
+}
+
 // ---------- actores y efectos ----------
 const roachMesh = makeRoach(); scene.add(roachMesh);
-const babies = [[-14.5, 5.3, 0.25], [-14.45, 6.7, -0.3]].map(([x, z, h]) => {
-  const m = makeRoach({ baby: true }); m.position.set(x, 0, z); m.rotation.y = -h; scene.add(m);
-  return { m, x, z, h, hop: 0 };
+const babies = [0.25, -0.3].map((h, i) => {
+  const m = makeRoach({ baby: true }); m.rotation.y = -h; scene.add(m);
+  return { m, x: -14.5, z: 0, side: i ? 0.7 : -0.7, hop: 0 };
 });
-const grannyMesh = makeGranny(); scene.add(grannyMesh); grannyMesh.visible = false;
-grannyMesh.userData.cone.scale.setScalar(VISION);
+const looks = {};
+for (const k of ['jadda', 'jeddi', 'keeper']) { looks[k] = makeGranny(k); looks[k].visible = false; looks[k].userData.cone.scale.setScalar(VISION); scene.add(looks[k]); }
+let grannyMesh = looks.jadda;
 const catMesh = makeCat(); scene.add(catMesh); catMesh.visible = false;
 const slipMesh = makeSlipper(); scene.add(slipMesh); slipMesh.visible = false;
+const C = [0, 1, 2].map(() => { const mesh = makeChicken(); mesh.visible = false; scene.add(mesh); return { mesh, on: false, state: 'wander', t: 0, x: 0, z: 0, face: 0, tx: 0, tz: 0, walk: 0 }; });
 
 const transp = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
 const flat = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.rotation.x = -Math.PI / 2; m.visible = false; scene.add(m); return m; };
@@ -71,6 +92,7 @@ function ring(x, z, r, color = '#ffffff', dur = 0.5, op = 0.35) {
 const slicks = [];
 for (let i = 0; i < 3; i++) slicks.push({ m: flat(new THREE.CircleGeometry(0.95, 14), transp('#f2b705', 0.85)), x: 0, z: 0, on: false, t: 0 });
 slicks.forEach((s) => { s.m.position.y = 0.04; });
+const takeSlick = (x, z, r) => { const s = slicks.find((q) => q.on && dist(x, z, q.x, q.z) < r); if (s) { s.on = false; s.m.visible = false; } return s; };
 
 const looseDrops = [];
 for (let i = 0; i < 5; i++) {
@@ -79,16 +101,16 @@ for (let i = 0; i < 5; i++) {
 }
 
 // ---------- estado ----------
-const R = { x: 0, z: 0, vx: 0, vz: 0, head: 0, carry: 0, fill: 0, hidden: false, lowHidden: false, alive: true, respawn: 0, inv: 0, poison: 0, walk: 0, glued: false, sprint: false, moving: false, dashT: 0, dashCd: 0, dvx: 0, dvz: 0, air: 0, wing: 0, turn: 0, squash: 0, noise: 1.6, ringT: 0, dripT: 0, deliverT: 0, delivered: 0, dustT: 0 };
-const G = { state: 'away', t: 0, x: 0, z: 0, face: 0, baseFace: 0, node: 0, prev: -1, route: [], linger: 0, visit: 0, leaving: false, lost: 0, throwCd: 0, sprayCd: 0, hear: 0, say: '', sayT: 0, walk: 0, arm: -2.6, reroute: 0, lastX: 0, lastZ: 0 };
+const R = { x: 0, z: 0, vx: 0, vz: 0, head: 0, carry: 0, fill: 0, hidden: false, lowHidden: false, alive: true, respawn: 0, inv: 0, poison: 0, walk: 0, glued: false, sprint: false, moving: false, dashT: 0, dashCd: 0, dvx: 0, dvz: 0, air: 0, wing: 0, turn: 0, squash: 0, noise: 1.6, ringT: 0, dripT: 0, deliverT: 0, delivered: 0, dustT: 0, scared: 0, cause: '' };
+const G = { kind: 'jadda', state: 'away', t: 0, x: 0, z: 0, face: 0, baseFace: 0, node: 0, prev: -1, route: [], linger: 0, visit: 0, leaving: false, lost: 0, throwCd: 0, sprayCd: 0, hear: 0, say: '', sayT: 0, walk: 0, arm: -2.6, reroute: 0, lastX: 0, lastZ: 0 };
 const K = { on: false, state: 'sleep', t: 0, x: 0, z: 0, face: 0, tx: 0, tz: 0, vx: 0, vz: 0, walk: 0, dur: 1, dodged: false };
 const S = { st: 'idle', t: 0, dur: 1, from: new THREE.Vector3(), to: new THREE.Vector3(), harmless: false };
 const P = { st: 'idle', t: 0, x: 0, z: 0 };
 const st = {
-  mode: 'title', modeT: 0, night: 1, quota: 6, stolen: 0, score: 0, combo: 1, lives: 3, time: 0, nightLen: 90,
+  mode: 'title', modeT: 0, night: 1, plan: plan(1), quota: 6, stolen: 0, score: 0, combo: 1, lives: 3, time: 0, nightLen: 90,
   detect: 0, lightOn: false, lightT: 9, light: 0, shake: 0, flash: 0, msg: '', msgT: 0, clock: 0, paused: false,
   freeze: 0, slow: 0, kick: 0, zoom: 1, danger: 0, seen: false, punchOil: 0, punchScore: 0, banner: null, news: '',
-  res: null, tut: 0, reason: '', introSeen: false,
+  res: null, tut: 0, reason: '', introSeen: false, cineT: 0,
   best: { score: 0, night: 0, ...JSON.parse(localStorage.getItem('srak-l-zit.best') || '{}') },
 };
 const cam = new THREE.Vector3(-8, 0, 3);
@@ -105,33 +127,68 @@ function addScore(n, label, x, z, color = GOLD) {
 }
 const hitstop = (t) => { st.freeze = Math.max(st.freeze, t); };
 
+// ---------- luces (los colores de noche dependen del escenario) ----------
+const Col = (h) => new THREE.Color(h);
+const moonC = Col('#7f9be6'), dawnC = Col('#ffa066'), lampC = Col('#ffe6bd'), tmpC = new THREE.Color();
+const hemiN = Col('#3a4a8a'), hemiL = Col('#fff1dc'), gndN = Col('#141428'), gndL = Col('#7a6a58');
+const winN = Col('#9db8ff'), winD = Col('#ffb26b'), tintN = Col('#b9c8ff'), tintL = Col('#ffffff');
+let moonI = 1.7;
+
 // ---------- flujo ----------
-function startGame() {
-  Object.assign(st, { lives: 3, score: 0, combo: 1, tut: 0 });
-  if (st.introSeen) startNight(1); else playIntro();
+function loadLevel(i) {
+  LV.levels.forEach((l, j) => { l.root.visible = j === i; });
+  world = LV.levels[i];
+  for (const k in looks) looks[k].visible = false;
+  grannyMesh = looks[world.look];
+  world.holeLight.position.set(world.hole.x, 0.7, world.hole.z);
+  babies.forEach((b) => { b.z = world.hole.z + b.side; b.m.position.set(b.x, 0, b.z); });
+  scene.background.set(world.palette.bg); moonC.set(world.palette.moon); tintN.set(world.palette.tint); moonI = world.palette.moonI;
+  for (const c of world.covers) c.hides = false;
 }
 
-function startNight(n) {
-  Object.assign(st, { night: n, quota: 4 + n * 2, stolen: 0, time: 0, nightLen: 84 + n * 8, detect: 0, mode: 'intro', modeT: 0, msgT: 0, seen: false, banner: null, res: null });
-  st.news = n === 1 ? 'ESPACIO: vuelo corto · E: suelta zit y que resbale'
-    : n === 2 ? 'Nuevo: Mchicha, el gato. A oscuras, no hagas ruido'
-      : n === 3 ? 'Nuevo: Baygon. No te duermas bajo el mueble' : 'La jadda cada vez duerme menos...';
+function setupNight(n) {
+  const p = plan(n), lit = !!world.alwaysLit;
+  Object.assign(st, { night: n, plan: p, quota: p.quota, stolen: 0, time: 0, nightLen: 86 + Math.min(n, 8) * 6, detect: 0, msgT: 0, seen: false, banner: null, res: null, news: p.news, lightOn: lit, lightT: 9, light: lit ? 1 : 0 });
   resetRoach();
-  Object.assign(G, { state: 'away', t: n === 1 ? 9 : rand(4, 7), sayT: 0, route: [] });
+  G.kind = p.enemy === false ? 'none' : world.enemy;
   grannyMesh.visible = false; grannyMesh.rotation.set(0, 0, 0); world.doorGlow.visible = false;
-  setLight(false); st.lightT = 9;
+  Object.assign(G, { sayT: 0, route: [], hear: 0, node: 0, prev: -1, leaving: false });
+  if (G.kind === 'jadda') Object.assign(G, { state: 'away', t: n === 1 ? 9 : rand(4, 7) });
+  else if (G.kind === 'sleeper') { const e = world.enemyPos; Object.assign(G, { state: 'doze', x: e.x, z: e.z, face: e.face, baseFace: e.face }); grannyMesh.visible = true; }
+  else if (G.kind === 'keeper') { const nd = world.nodes[0]; Object.assign(G, { state: 'patrol', x: nd.x, z: nd.z, linger: 1.5, visit: Infinity, face: Math.PI / 2, baseFace: Math.PI / 2 }); grannyMesh.visible = true; }
+  else G.state = 'none';
   S.st = 'idle'; slipMesh.visible = false; marker.visible = false; P.st = 'idle'; cloud.visible = false;
   slicks.forEach((s) => { s.on = false; s.m.visible = false; });
-  world.bottle.visible = n >= 2; world.bottleCollider.off = n < 2;
-  const traps = n < 2 ? 0 : n < 3 ? 2 : n < 5 ? 3 : 5;
-  world.glue.forEach((g, i) => { g.on = i < traps; g.mesh.visible = g.on; });
-  const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
-  const spots = shuffle(world.dropSpots), count = Math.min(5, 2 + (n >> 1));
+  if (world.bottle) { world.bottle.visible = !!p.bottle; world.bottleCollider.off = !p.bottle; }
+  const nGlue = (p.glue || 0) + (p.loop ? 1 : 0);
+  world.glue.forEach((g, i) => { g.on = i < nGlue && !!world.glueSpots[i]; g.mesh.visible = g.on; if (g.on) { [g.x, g.z] = world.glueSpots[i]; g.mesh.position.set(g.x, 0, g.z); g.mesh.rotation.y = i * 0.7; } });
+  world.snaps.forEach((s, i) => { s.on = i < (p.snaps || 0); s.shut = false; s.mesh.visible = s.on; s.bar.position.x = 0.42; if (s.on) { [s.x, s.z] = world.snapSpots[i]; s.mesh.position.set(s.x, 0, s.z); s.mesh.rotation.y = i * 1.3; } });
+  const spots = shuffle(world.dropSpots), count = Math.min(5, 2 + (p.tier >> 1));
   looseDrops.forEach((d, i) => { d.on = i < count; d.m.visible = d.on; if (d.on) { [d.x, d.z] = spots[i]; d.m.position.set(d.x, 0.22, d.z); } });
-  const ps = shuffle(world.plateSpots), plates = n < 3 ? 2 : 3;
-  world.plates.forEach((p, i) => { p.on = i < plates; p.mesh.visible = p.on; p.amount = 3; p.oil.visible = true; p.oil.scale.set(1, 1, 1); if (p.on) { [p.x, p.z] = ps[i]; p.mesh.position.set(p.x, 0, p.z); } });
-  K.on = n >= 2; catMesh.visible = K.on;
+  const ps = shuffle(world.plateSpots), plates = p.tier < 4 ? 2 : 3;
+  world.plates.forEach((pl, i) => { pl.on = i < plates; pl.mesh.visible = pl.on; pl.amount = 3; pl.oil.visible = true; pl.oil.scale.set(1, 1, 1); if (pl.on) { [pl.x, pl.z] = ps[i]; pl.mesh.position.set(pl.x, 0, pl.z); } });
+  K.on = !!p.cat; catMesh.visible = K.on;
   if (K.on) { const [cx, cz] = pick(world.catSpots.slice(0, 3)); Object.assign(K, { state: 'sleep', t: rand(4, 7), x: cx, z: cz, face: rand(-3, 3) }); }
+  C.forEach((c, i) => { c.on = i < (p.chicks || 0); c.mesh.visible = c.on; if (c.on) { [c.x, c.z] = world.chickSpots[i]; Object.assign(c, { state: 'wander', t: rand(1, 3), tx: c.x, tz: c.z, face: rand(-3, 3) }); } });
+}
+
+function startNight(n) { st.prepN = n; loadLevel(plan(n).lv); setupNight(n); st.mode = 'intro'; st.modeT = 0; }
+function prep(n) { if (st.prepN !== n) { st.prepN = n; loadLevel(plan(n).lv); setupNight(n); } }
+
+function startGame() {
+  Object.assign(st, { lives: 3, score: 0, combo: 1, tut: 0, prepN: null });
+  goNight(1);
+}
+
+// Pasa a la noche n; si cambia de sitio, antes van el plano de la casa y la presentación del lugar.
+function goNight(n) {
+  const p = plan(n), prev = n > 1 ? plan(n - 1) : null;
+  if ((prev && prev.lv === p.lv) || (n === 1 && st.introSeen)) return startNight(n);
+  const L = LV.levels[p.lv], steps = [];
+  if (n === 1) steps.push(...openingSteps());
+  steps.push({ dur: 4.4, art: 'map', map: { from: prev ? prev.lv : null, to: p.lv }, title: `CAPÍTULO ${p.lv + 1}${p.loop ? ' · OTRA VUELTA' : ''}`, big: L.name, cap: L.sub });
+  steps.push(...(n === 1 ? kitchenSteps() : placeSteps(n)));
+  playCine(steps, () => { st.introSeen = true; R.scared = 0; startNight(n); });
 }
 
 function resetRoach() {
@@ -141,15 +198,23 @@ function resetRoach() {
 
 function setLight(on) { if (st.lightOn !== on) { st.lightOn = on; st.lightT = 0; sfx.click(); } }
 
+const DEATHS = {
+  slipper: ['¡PLAF! Belgha en toda la espalda', (w) => `${w[0].toUpperCase() + w.slice(1)} te ha dejado como una pegatina.`],
+  spray: ['¡Cof, cof! Baygon...', () => 'El Baygon pudo contigo.'],
+  cat: ['¡Ñam! Mchicha no perdona', () => 'Mchicha se ha relamido los bigotes.'],
+  peck: ['¡Toc! Picotazo de gallina', () => 'Has acabado de desayuno de gallina.'],
+  trap: ['¡CLAC! El cepo', () => 'El cepo de Si Brahim no falla.'],
+};
+
 function killRoach(cause) {
   if (!R.alive || R.inv > 0) return;
-  Object.assign(R, { alive: false, respawn: 2.1, carry: 0, vx: 0, vz: 0, dashT: 0, air: 0, wing: 0 });
-  R.cause = cause; st.lives--; st.detect = 0; st.combo = 1; st.shake = 0.5; st.flash = 0.5; hitstop(0.14); sfx.squash();
+  Object.assign(R, { alive: false, respawn: 2.1, carry: 0, vx: 0, vz: 0, dashT: 0, air: 0, wing: 0, cause });
+  st.lives--; st.detect = 0; st.combo = 1; st.shake = 0.5; st.flash = 0.5; hitstop(0.14); sfx.squash();
   burst(R.x, 0.3, R.z, '#a8521c', 14, 6, 5); burst(R.x, 0.3, R.z, '#ffd23f', 8, 4, 6);
   ring(R.x, R.z, 3, '#ffffff', 0.4, 0.6);
   roachMesh.userData.body.scale.set(1.3, 0.14, 1.3); roachMesh.userData.body.position.y = 0;
   soul.visible = true; soul.position.set(R.x, 0.6, R.z);
-  say(cause === 'spray' ? '¡Cof, cof! Baygon...' : cause === 'cat' ? '¡Ñam! Mchicha no perdona' : '¡PLAF! Belgha en toda la espalda', 2);
+  say(DEATHS[cause][0], 2);
   if (G.state === 'hunt') { G.state = 'gloat'; G.t = 2; gsay('¡Hamdullah!', 2); }
 }
 
@@ -160,12 +225,14 @@ function endRun(reason) {
 
 function clearNight() {
   const time = Math.max(0, Math.floor(st.nightLen - st.time)) * 2, stealth = st.seen ? 0 : 100, lives = st.lives * 25;
-  st.res = { drops: st.quota, time, stealth, lives, before: st.score };
+  st.res = { drops: st.quota, time, stealth, lives };
   st.score += time + stealth + lives;
   st.mode = 'clear'; st.modeT = 0; sfx.win();
-  grannyMesh.visible = false; setLight(false); S.st = 'idle'; slipMesh.visible = false; marker.visible = false; cloud.visible = false; P.st = 'idle';
+  grannyMesh.visible = false; setLight(!!world.alwaysLit); S.st = 'idle'; slipMesh.visible = false; marker.visible = false; cloud.visible = false; P.st = 'idle';
   R.x = world.hole.x + 1.6; R.z = world.hole.z; R.vx = R.vz = 0;
 }
+
+function nextNight() { if (st.night % PLAN.length === 0) playEnding(st.night); else goNight(st.night + 1); }
 
 // ---------- cucaracha ----------
 function collide(p, r) {
@@ -188,7 +255,7 @@ function collide(p, r) {
 }
 
 function oilSources() {
-  const list = world.oil.filter((o) => st.night >= o.minNight);
+  const list = world.oil.filter((o) => !o.bottle || st.plan.bottle);
   for (const p of world.plates) if (p.on && p.amount > 0) list.push(p);
   return list;
 }
@@ -198,9 +265,7 @@ function updateRoach(dt) {
   if (!R.alive) {
     R.respawn -= dt;
     soul.position.y += dt * 1.6; soul.rotation.y += dt * 3;
-    if (R.respawn <= 0) {
-      if (st.lives <= 0) endRun(R.cause === 'cat' ? 'Mchicha se ha relamido los bigotes.' : R.cause === 'spray' ? 'El Baygon pudo contigo.' : 'La jadda te ha dejado como una pegatina.'); else resetRoach();
-    }
+    if (R.respawn <= 0) { if (st.lives <= 0) endRun(DEATHS[R.cause][1](world.who)); else resetRoach(); }
     return;
   }
   let ix = 0, iy = 0;
@@ -217,6 +282,10 @@ function updateRoach(dt) {
   const wasGlued = R.glued;
   R.glued = R.air < 0.2 && world.glue.some((g) => g.on && dist(R.x, R.z, g.x, g.z) < g.r);
   if (R.glued && !wasGlued) { sfx.glue(); say('¡Pegamento! Sal de ahí con un vuelo', 1.8); }
+  for (const s of world.snaps) {
+    if (!s.on || s.shut || R.air > 0.2 || dist(R.x, R.z, s.x, s.z) > 0.85) continue;
+    s.shut = true; s.bar.position.x = -0.3; sfx.slap(); burst(s.x, 0.3, s.z, '#d7dbe2', 6, 4, 3); killRoach('trap');
+  }
 
   // vuelo corto
   R.dashCd = Math.max(0, R.dashCd - dt);
@@ -237,7 +306,7 @@ function updateRoach(dt) {
   }
   R.x += R.vx * dt; R.z += R.vz * dt;
   collide(R, ROACH_R);
-  if (grannyMesh.visible && G.state !== 'slip') { // no se puede atravesar a la jadda
+  if (grannyMesh.visible && G.state !== 'slip' && G.kind !== 'sleeper') { // no se puede atravesar a quien patrulla
     const d = dist(R.x, R.z, G.x, G.z), m = ROACH_R + GRANNY_R;
     if (d < m && d > 1e-4) { R.x = G.x + (R.x - G.x) / d * m; R.z = G.z + (R.z - G.z) / d * m; }
   }
@@ -248,12 +317,12 @@ function updateRoach(dt) {
   } else R.turn *= 1 - Math.min(1, dt * 10);
   R.inv = Math.max(0, R.inv - dt);
 
-  // ruido: lo oyen el gato y la jadda
+  // ruido: lo oyen el gato, jeddi y quien patrulle
   const dashing = R.dashT > 0;
   R.noise = dashing ? 8 : R.sprint ? 7.5 : R.moving ? 3.6 : 1.6;
   R.ringT -= dt; R.dustT -= dt;
-  const catAwake = K.on && !st.lightOn;
-  if (R.moving && R.ringT <= 0 && (R.sprint ? (grannyMesh.visible || catAwake) : catAwake)) {
+  const listener = (K.on && !st.lightOn) || G.state === 'doze';
+  if (R.moving && R.ringT <= 0 && (R.sprint ? (grannyMesh.visible || listener) : listener)) {
     ring(R.x, R.z, R.noise, R.sprint ? '#ffffff' : '#9db8ff', 0.5, R.sprint ? 0.3 : 0.16); R.ringT = 0.42;
   }
   if (R.sprint && R.dustT <= 0) { burst(R.x - R.vx * 0.05, 0.1, R.z - R.vz * 0.05, '#e6dcc4', 1, 1, 1.2, 0.35); R.dustT = 0.07; }
@@ -263,7 +332,7 @@ function updateRoach(dt) {
     c.under = R.x > c.x0 && R.x < c.x1 && R.z > c.z0 && R.z < c.z1;
     if (c.under) { R.hidden = true; if (c.low) R.lowHidden = true; }
     // el tablero también se aparta si tapa a la cucaracha desde la cámara
-    const k = c.h / gfx.dir.y, qx = R.x + gfx.dir.x * k, qz = R.z + gfx.dir.z * k, m = 1.1;
+    const top = c.id[0] === 'g' ? 4.6 : c.h, k = top / gfx.dir.y, qx = R.x + gfx.dir.x * k, qz = R.z + gfx.dir.z * k, m = 1.1;
     c.hides = c.under || (qx > c.x0 - m && qx < c.x1 + m && qz > c.z0 - m && qz < c.z1 + m && R.x > c.x0 - m && R.z > c.z0 - m);
   }
 
@@ -289,7 +358,7 @@ function updateRoach(dt) {
     const s = slicks.find((q) => !q.on) || slicks.reduce((a, b) => (a.t > b.t ? a : b));
     Object.assign(s, { on: true, t: 0, x: R.x - Math.cos(R.head) * 0.5, z: R.z - Math.sin(R.head) * 0.5 });
     s.m.position.set(s.x, 0.04, s.z); s.m.visible = true; s.m.scale.setScalar(0.2);
-    R.carry--; sfx.drip(); burst(s.x, 0.2, s.z, '#f2b705', 6, 2.5, 2); if (st.tut === 3) st.tut = 4;
+    R.carry--; sfx.drip(); burst(s.x, 0.2, s.z, '#f2b705', 6, 2.5, 2);
   }
 
   // entregar en el agujero, gota a gota
@@ -311,7 +380,7 @@ function updateRoach(dt) {
   } else if (!atHole) { R.deliverT = 0; R.delivered = 0; }
 }
 
-// ---------- la jadda ----------
+// ---------- quien vigila: la jadda (entra y sale), jeddi (duerme) o Si Brahim (no para) ----------
 function bfs(from, to) {
   const prev = new Map([[from, -1]]), q = [from];
   while (q.length) {
@@ -339,18 +408,14 @@ function grannyWalk(dt, speed) { // avanza hacia route[0]; devuelve true al lleg
     if (near < 9) st.shake = Math.max(st.shake, 0.06 * (1 - near / 9));
     burst(G.x, 0.1, G.z, '#e6dcc4', 2, 1.5, 1, 0.3);
   }
-  const s = slicks.find((q) => q.on && dist(G.x, G.z, q.x, q.z) < 1.25);
-  if (s) { grannySlip(s); return false; }
+  if (takeSlick(G.x, G.z, 1.25)) { // patas arriba
+    G.state = 'slip'; G.t = 3.8; st.detect = 0; st.slow = 0.5; st.kick = 0.1; sfx.slip();
+    gsay('¡Ay ay ay! ¡Dahri!', 2.6); addScore(50, '¡Resbalón!', G.x, G.z, '#9be7a0'); burst(G.x, 0.2, G.z, '#f2b705', 10, 5, 4);
+    return false;
+  }
   if (d <= step) { G.x = n.x; G.z = n.z; G.prev = G.node; G.node = G.route.shift(); return true; }
   G.x += dx / d * step; G.z += dz / d * step;
   return false;
-}
-
-function grannySlip(s) {
-  s.on = false; s.m.visible = false;
-  G.state = 'slip'; G.t = 3.8; st.detect = 0; st.slow = 0.5; st.kick = 0.1; sfx.slip();
-  gsay('¡Ay ay ay! ¡Dahri!', 2.6); addScore(50, '¡Resbalón!', G.x, G.z, '#9be7a0');
-  burst(G.x, 0.2, G.z, '#f2b705', 10, 5, 4);
 }
 
 function turnTo(a, dt, rate = 5) { G.face += wrap(a - G.face) * Math.min(1, dt * rate); }
@@ -361,9 +426,16 @@ function canSeeRoach(range, half) {
   return d < range && Math.abs(wrap(Math.atan2(R.z - G.z, R.x - G.x) - G.face)) < half;
 }
 
+function alarm(text) {
+  Object.assign(G, { state: 'hunt', lost: 0, throwCd: 0.7, sprayCd: 1.5, reroute: 0, lastX: R.x, lastZ: R.z });
+  st.detect = 1; st.seen = true; gsay(text, 1.6); sfx.alarm(); st.flash = 0.25;
+  st.banner = { text, t: 0.9 }; hitstop(0.32); st.kick = 0.14;
+}
+
 function updateGranny(dt) {
   G.sayT -= dt; G.hear = Math.max(0, G.hear - dt);
-  const n = st.night;
+  const n = st.plan.tier, sleeper = G.kind === 'sleeper';
+  if (G.state === 'none') { st.detect = Math.max(0, st.detect - dt); return; }
   if (G.state === 'away') {
     G.t -= dt;
     if (G.t <= 0) { G.state = 'warn'; G.t = 2.3; G.walk = 0; world.doorGlow.visible = true; say(st.tut < 5 ? '¡Viene la jadda! Escóndete bajo un mueble' : '¡Viene la jadda!', 2.6); }
@@ -380,11 +452,19 @@ function updateGranny(dt) {
     }
     return;
   }
+  if (G.state === 'doze') { // jeddi no ve: oye. El ruido cerca de él lo va despertando
+    const d = dist(R.x, R.z, G.x, G.z), reach = R.noise + 1.6;
+    if (R.alive && R.noise > 2 && d < reach) st.detect += dt * (R.noise > 7 ? 1.25 : 0.42) * (1.45 - d / reach);
+    else st.detect = Math.max(0, st.detect - dt * 0.22);
+    if (st.detect >= 1) { setLight(true); alarm('¡¿CHKOUN?!'); }
+    return;
+  }
   if (G.state === 'slip') {
     G.t -= dt;
     if (G.t <= 0) { G.state = 'patrol'; G.linger = 1.2; G.baseFace = G.face; gsay('Ya verás tú...', 1.5); }
     return;
   }
+  const backToSleep = () => { G.state = 'doze'; st.detect = 0.15; setLight(false); gsay('Mmm... zzz', 1.6); };
 
   const toRoach = Math.atan2(R.z - G.z, R.x - G.x), dR = dist(R.x, R.z, G.x, G.z);
 
@@ -408,17 +488,16 @@ function updateGranny(dt) {
     }
     if (canSeeRoach(VISION, VISION_HALF)) st.detect += dt * (R.moving ? 1.7 : 0.75) * (1.35 - dR / VISION);
     else st.detect = Math.max(0, st.detect - dt * 0.45);
-    if (st.detect >= 1) {
-      Object.assign(G, { state: 'hunt', lost: 0, throwCd: 0.7, sprayCd: 1.5, reroute: 0, lastX: R.x, lastZ: R.z });
-      st.detect = 1; st.seen = true; gsay('¡¡SRAK ZIT!!', 1.6); sfx.alarm(); st.flash = 0.25;
-      st.banner = { text: '¡¡SRAK ZIT!!', t: 0.9 }; hitstop(0.32); st.kick = 0.14;
-    }
+    if (st.detect >= 1) alarm('¡¡SRAK ZIT!!');
     return;
   }
 
   if (G.state === 'gloat') {
     G.t -= dt;
-    if (G.t <= 0) { G.state = 'patrol'; G.visit = Math.min(G.visit, 2); G.linger = 0.5; G.baseFace = G.face; G.leaving = false; }
+    if (G.t <= 0) {
+      if (sleeper) backToSleep();
+      else { G.state = 'patrol'; if (G.kind === 'jadda') G.visit = Math.min(G.visit, 2); G.linger = 0.5; G.baseFace = G.face; G.leaving = false; }
+    }
     return;
   }
 
@@ -428,22 +507,26 @@ function updateGranny(dt) {
   st.detect = clamp(1 - G.lost / 3.6, 0, 1);
   turnTo(Math.atan2(G.lastZ - G.z, G.lastX - G.x), dt, 8);
   if (G.lost > 3.6 || !R.alive) {
+    if (R.alive) addScore(15, 'Despistado', R.x, R.z, '#9be7a0');
+    if (sleeper) { backToSleep(); return; }
     G.state = 'patrol'; G.linger = 1.2; G.baseFace = G.face; st.detect = 0.2;
-    if (R.alive) { gsay('¿Fin mchiti?', 1.8); addScore(15, 'Despistada', R.x, R.z, '#9be7a0'); }
+    if (R.alive) gsay('¿Fin mchiti?', 1.8);
     return;
   }
-  G.reroute -= dt;
-  if (G.reroute <= 0 && !G.route.length) {
-    G.reroute = 0.8;
-    const target = nearestNode(G.lastX, G.lastZ);
-    if (dist(G.x, G.z, G.lastX, G.lastZ) > 6.5 && target !== G.node) G.route = bfs(G.node, target).slice(0, 1);
+  if (!sleeper) {
+    G.reroute -= dt;
+    if (G.reroute <= 0 && !G.route.length) {
+      G.reroute = 0.8;
+      const target = nearestNode(G.lastX, G.lastZ);
+      if (dist(G.x, G.z, G.lastX, G.lastZ) > 6.5 && target !== G.node) G.route = bfs(G.node, target).slice(0, 1);
+    }
+    grannyWalk(dt, 4 + n * 0.2);
+    if (G.state !== 'hunt') return;
   }
-  grannyWalk(dt, 4 + n * 0.2);
-  if (G.state !== 'hunt') return;
 
   G.throwCd -= dt; G.sprayCd -= dt;
   if (G.throwCd <= 0 && S.st === 'idle') {
-    if (!sees && R.hidden && n >= 3 && P.st === 'idle' && G.sprayCd <= 0) {
+    if (!sees && R.hidden && n >= 3 && !sleeper && P.st === 'idle' && G.sprayCd <= 0) {
       P.st = 'warn'; P.t = 0.9; P.x = R.x; P.z = R.z; G.sprayCd = 6; G.throwCd = 1.2;
       gsay('¡Toma Baygon!', 1.4); sfx.spray();
     } else {
@@ -531,8 +614,7 @@ function updateCat(dt) {
       if (R.air < 0.25) killRoach('cat');
       else if (!K.dodged) { K.dodged = true; st.slow = 0.35; addScore(15, '¡Olé!', R.x, R.z, '#9be7a0'); sfx.bonus(); }
     }
-    const s = slicks.find((q) => q.on && dist(K.x, K.z, q.x, q.z) < 1.2);
-    if (s) { s.on = false; s.m.visible = false; K.state = 'slide'; K.t = 2.4; sfx.slip(); addScore(30, '¡Patinazo!', K.x, K.z, '#9be7a0'); burst(K.x, 0.2, K.z, '#f2b705', 8, 4, 3); }
+    if (takeSlick(K.x, K.z, 1.2)) { K.state = 'slide'; K.t = 2.4; sfx.slip(); addScore(30, '¡Patinazo!', K.x, K.z, '#9be7a0'); burst(K.x, 0.2, K.z, '#f2b705', 8, 4, 3); }
     else if (K.t <= 0) { K.state = 'recover'; K.t = 1.5; burst(K.x, 0.1, K.z, '#e6dcc4', 6, 3, 1.5, 0.4); }
   } else if (K.state === 'slide') {
     K.x = clamp(K.x + K.vx * 0.3 * dt, ROOM.x0 + 1, ROOM.x1 - 1); K.z = clamp(K.z + K.vz * 0.3 * dt, ROOM.z0 + 1, ROOM.z1 - 1);
@@ -540,9 +622,36 @@ function updateCat(dt) {
   } else if (K.t <= 0) { K.state = 'sleep'; K.t = dark ? rand(0.5, 1.5) : 3; }
 }
 
-// ---------- cinemática de entrada ----------
-function playCine(steps, done) { Object.assign(cine, { steps, i: 0, t: 0, done }); st.mode = 'cine'; steps[0].enter?.(); }
-function endCine() { const d = cine.done; cine.steps = null; d(); }
+// ---------- las gallinas del patio: ven de cerca, persiguen y pican ----------
+function updateChicks(dt) {
+  for (const c of C) {
+    if (!c.on) continue;
+    c.t -= dt;
+    const d = dist(R.x, R.z, c.x, c.z), sees = R.alive && R.inv <= 0 && !R.hidden && d < (R.sprint || R.dashT > 0 ? 6.2 : 4.3);
+    const go = (tx, tz, speed) => { const dx = tx - c.x, dz = tz - c.z, l = Math.hypot(dx, dz) || 1; c.x += dx / l * speed * dt; c.z += dz / l * speed * dt; c.face += wrap(Math.atan2(dz, dx) - c.face) * Math.min(1, dt * 9); c.walk += dt * speed * 3; return l; };
+    if (c.state === 'wander') {
+      if (sees) { c.state = 'chase'; c.t = 3.4; sfx.cluck(); floater('!', c.x, c.z, '#ff5a5a', 2, 2.2); }
+      else if (c.t <= 0 || go(c.tx, c.tz, (c.t % 1.7) > 0.6 ? 1.7 : 0) < 0.4) { c.tx = clamp(c.x + rand(-5, 5), -13, 13); c.tz = clamp(c.z + rand(-4, 4), -8.5, 8.5); c.t = rand(2.5, 5); }
+    } else if (c.state === 'chase') {
+      if (!R.alive || R.hidden || c.t <= 0 || d > 8) { c.state = 'rest'; c.t = 1.6; }
+      else if (go(R.x, R.z, 5.7) < 1.4) { c.state = 'peck'; c.t = 0.42; c.dur = 0.42; }
+    } else if (c.state === 'peck') {
+      c.face += wrap(Math.atan2(R.z - c.z, R.x - c.x) - c.face) * Math.min(1, dt * 10);
+      if (c.t <= 0) {
+        sfx.peck(); burst(c.x + Math.cos(c.face), 0.1, c.z + Math.sin(c.face), '#e6dcc4', 4, 2, 1.5, 0.3);
+        if (R.alive && !R.hidden && R.air < 0.25 && d < 1.55) killRoach('peck');
+        else if (R.alive && d < 2.6) { st.slow = 0.3; addScore(15, '¡Olé!', R.x, R.z, '#9be7a0'); sfx.bonus(); }
+        c.state = 'rest'; c.t = 0.9;
+      }
+    } else if (c.t <= 0) { c.state = 'wander'; c.t = rand(1, 3); c.tx = c.x; c.tz = c.z; }
+    if ((c.state === 'wander' || c.state === 'chase') && takeSlick(c.x, c.z, 1.1)) { c.state = 'slide'; c.t = 2.6; sfx.slip(); addScore(30, '¡Patinazo!', c.x, c.z, '#9be7a0'); burst(c.x, 0.2, c.z, '#f2b705', 8, 4, 3); }
+    collide(c, 0.55);
+  }
+}
+
+// ---------- cinemáticas ----------
+function playCine(steps, done) { Object.assign(cine, { steps, i: 0, t: 0, done }); st.mode = 'cine'; st.cineT = st.clock; steps[0].enter?.(); }
+function endCine() { const d = cine.done; cine.steps = null; grannyMesh.visible = false; world.doorGlow.visible = false; G.sayT = 0; d(); }
 function updateCine(dt) {
   const s = cine.steps[cine.i], before = cine.t;
   s.update?.(dt, Math.min(1, cine.t / s.dur));
@@ -551,15 +660,18 @@ function updateCine(dt) {
   if (text && Math.floor(before * 34) !== Math.floor(cine.t * 34) && cine.t * 34 < text.length && Math.floor(cine.t * 34) % 2 === 0) sfx.blip();
   if (cine.t >= s.dur) { cine.i++; cine.t = 0; if (cine.i >= cine.steps.length) endCine(); else cine.steps[cine.i].enter?.(); }
 }
+const place = (x, z, head) => { Object.assign(R, { x, z, head, vx: 0, vz: 0, air: 0, carry: 0, alive: true, inv: 0, scared: 0 }); };
 
-function playIntro() {
-  const h = world.hole, oil = world.oil[0], door = world.nodes[0];
-  const place = (x, z, head) => { Object.assign(R, { x, z, head, vx: 0, vz: 0, air: 0, carry: 0, alive: true, inv: 0 }); };
-  place(h.x - 1.2, h.z, 0); roachMesh.visible = false; grannyMesh.visible = false; setLight(false);
-  playCine([
-    { dur: 2.6, cam: [h.x + 2, h.z, 1.5], cap: 'Marrakech. Las 3:07 de la madrugada.' },
+const openingSteps = () => [
+  { dur: 3.6, art: 'night', cap: 'Marrakech. Las 3:07 de la madrugada.' },
+  { dur: 4.2, art: 'night', scroll: 26, cap: 'La medina duerme. Bajo una cocina, una familia tiene hambre.' },
+];
+
+function kitchenSteps() {
+  const L = LV.levels[0], h = L.hole, oil = L.oil[0], door = L.nodes[0];
+  return [
     { dur: 2.9, cam: [h.x + 2, h.z, 1.7], say: { who: 'baby', text: '¡Baba! ¡Tenemos hambre!' },
-      enter: () => { roachMesh.visible = true; },
+      enter: () => { prep(1); place(h.x - 1.2, h.z, 0); G.state = 'cine'; },
       update: (dt, k) => { R.x = lerp(h.x - 0.8, h.x + 3.2, ease(Math.min(1, k * 1.6))); R.vx = k < 0.6 ? 4 : 0; if (k > 0.6) R.head += wrap(Math.PI - R.head) * Math.min(1, dt * 8); babies.forEach((b, i) => { if (Math.sin(k * 20 + i * 2) > 0.9) b.hop = 0.3; }); } },
     { dur: 3.0, cam: [h.x + 2, h.z, 1.7], say: { who: 'roach', text: 'Tranquilos, wlidati. Hoy cenamos zit.' },
       enter: () => { R.vx = 0; R.head = Math.PI; }, update: (dt, k) => { R.air = k > 0.7 && k < 0.85 ? Math.sin((k - 0.7) / 0.15 * Math.PI) * 0.4 : 0; } },
@@ -576,15 +688,35 @@ function playIntro() {
     { dur: 2.0, cam: [h.x + 2, h.z, 1.8], say: { who: 'roach', text: '¡Bismillah!' },
       enter: () => { grannyMesh.visible = false; setLight(false); R.head = 0; sfx.gulp(); },
       update: (dt, k) => { R.air = k < 0.3 ? Math.sin(k / 0.3 * Math.PI) * 0.6 : 0; R.scared = 1; } },
-  ], () => { st.introSeen = true; R.scared = 0; grannyMesh.visible = false; world.doorGlow.visible = false; G.sayT = 0; startNight(1); });
+  ];
+}
+
+// Presentación de un sitio nuevo: la amenaza, el botín y la cucaracha armándose de valor.
+function placeSteps(n) {
+  const p = plan(n), L = LV.levels[p.lv], h = L.hole, oil = L.oil[0];
+  const th = L.enemyPos || (p.chicks && L.chickSpots ? { x: L.chickSpots[0][0], z: L.chickSpots[0][1] } : L.nodes[Math.min(1, L.nodes.length - 1)]);
+  return [
+    { dur: 3.6, cam: [th.x, th.z + 1, 1.35], cap: L.capThreat || 'La jadda sigue de guardia. Y está de peor humor.', enter: () => { prep(n); place(h.x + 1.4, h.z, 0); } },
+    { dur: 3.2, cam: [oil.x - 1.5, oil.z - 1.5, 1.4], cap: L.capOil || 'El bidón sigue ahí. Esperándote.',
+      update: () => { if (Math.random() < 0.12) burst(oil.x + rand(-1, 1), rand(0.5, 2), oil.z + rand(-1, 1), '#fff6d6', 1, 0.3, 0.8, 0.5, 2); } },
+    { dur: 1.9, cam: [h.x + 2, h.z, 1.8], say: { who: 'roach', text: pick(['¡Yallah!', 'Bismillah...', 'Por los wlidat.']) },
+      update: (dt, k) => { R.air = k < 0.35 ? Math.sin(k / 0.35 * Math.PI) * 0.5 : 0; } },
+  ];
+}
+
+function playEnding(n) {
+  const h = world.hole;
+  playCine([
+    { dur: 3.6, cam: [h.x + 2.5, h.z, 1.8], say: { who: 'roach', text: '¡Wlidati! ¡Zit para todo el invierno!' },
+      enter: () => { place(h.x + 1.8, h.z, Math.PI); grannyMesh.visible = false; },
+      update: (dt, k) => { R.air = Math.abs(Math.sin(k * 14)) * 0.4; babies.forEach((b, i) => { if (b.hop <= 0 && Math.sin(k * 30 + i * 2) > 0.6) b.hop = 0.4; }); } },
+    { dur: 4.4, art: 'dawn', cap: 'Amanece sobre Marrakech.', enter: () => { st.cineT = st.clock; sfx.win(); } },
+    { dur: 5.2, art: 'dawn', scroll: 20, cap: 'En algún agujero de la medina, una familia desayuna khobz con zit.' },
+    { dur: 7, art: 'dawn', scroll: 34, big: 'FIN', cap: `${st.score} puntos. Pero el zit se acaba pronto... y la jadda no olvida.` },
+  ], () => goNight(n + 1));
 }
 
 // ---------- luces y cámara ----------
-const C = (h) => new THREE.Color(h);
-const moonC = C('#7f9be6'), dawnC = C('#ffa066'), lampC = C('#ffe6bd'), tmpC = new THREE.Color();
-const hemiN = C('#3a4a8a'), hemiL = C('#fff1dc'), gndN = C('#141428'), gndL = C('#7a6a58');
-const winN = C('#9db8ff'), winD = C('#ffb26b'), tintN = C('#b9c8ff'), tintL = C('#ffffff');
-
 function updateLight(dt) {
   st.lightT += dt;
   const t = st.lightT;
@@ -594,14 +726,17 @@ function updateLight(dt) {
   const a = st.light, dawn = playing ? clamp((st.time / st.nightLen - 0.72) / 0.28, 0, 1) : 0;
   tmpC.copy(moonC).lerp(dawnC, dawn);
   world.sun.color.copy(tmpC).lerp(lampC, a);
-  world.sun.intensity = lerp(1.7 + dawn * 0.6, 2.3, a);
+  world.sun.intensity = lerp(moonI + dawn * 0.6, 2.3, a);
   world.sun.position.lerpVectors(world.moonPos, world.lampPos, a);
   world.hemi.color.copy(hemiN).lerp(hemiL, a); world.hemi.groundColor.copy(gndN).lerp(gndL, a);
   world.hemi.intensity = lerp(1.25 + dawn * 0.4, 1.3, a);
-  world.windowMat.color.copy(winN).lerp(winD, dawn);
+  world.windowMat?.color.copy(winN).lerp(winD, dawn);
+  if (world.tvLight) { const f = Math.floor(st.clock * 2.5) % 3; world.tvLight.intensity = 11 + f * 4 + Math.sin(st.clock * 17) * 2; world.tvMat.color.setHSL(0.6 - f * 0.04, 0.7, 0.62 + f * 0.06); }
+  world.waterMat?.color.setHSL(0.55, 0.62, 0.52 + Math.sin(st.clock * 3) * 0.05);
   gfx.post.uniforms.tint.value.copy(tintN).lerp(tintL, Math.max(a, dawn * 0.6));
   world.holeLight.intensity = 5 + Math.sin(st.clock * 6) * 0.8;
-  const danger = st.mode !== 'play' ? 0 : G.state === 'hunt' ? 0.75 + Math.sin(st.clock * 10) * 0.25 : K.state === 'alert' || K.state === 'pounce' ? 0.7 : st.detect * 0.5;
+  const chased = C.some((c) => c.on && (c.state === 'chase' || c.state === 'peck'));
+  const danger = st.mode !== 'play' ? 0 : G.state === 'hunt' ? 0.75 + Math.sin(st.clock * 10) * 0.25 : chased || K.state === 'alert' || K.state === 'pounce' ? 0.7 : st.detect * 0.5;
   st.danger += (danger - st.danger) * Math.min(1, dt * 8);
   gfx.post.uniforms.danger.value = st.danger;
 }
@@ -609,8 +744,9 @@ function updateLight(dt) {
 const camT = new THREE.Vector3();
 function updateCamera(dt, raw) {
   let tx, tz, zoom = 1, rate = 5;
-  if (st.mode === 'title') { tx = -9.4 + Math.sin(st.clock * 0.25) * 0.6; tz = 3.6; zoom = 1.35; }
-  else if (st.mode === 'cine') { [tx, tz, zoom] = cine.steps[cine.i].cam; rate = 3.2; }
+  const step = st.mode === 'cine' ? cine.steps[cine.i] : null;
+  if (step?.cam) { [tx, tz, zoom] = step.cam; rate = 3.2; }
+  else if (st.mode === 'title' || step) { tx = cam.x; tz = cam.z; }
   else if (st.mode === 'clear') { tx = world.hole.x + 3.6; tz = world.hole.z + 1.6; zoom = 1.6; rate = 3; }
   else {
     tx = clamp(R.x + R.vx * 0.25, -12, 12); tz = clamp(R.z + R.vz * 0.25, -7.5, 7.5);
@@ -634,7 +770,7 @@ function syncMeshes(dt) {
   if (R.alive) {
     roachMesh.rotation.y = -R.head;
     if (st.mode !== 'cine') roachMesh.visible = R.inv <= 0 || Math.floor(st.clock * 14) % 2 === 0;
-    const scared = st.mode === 'play' ? clamp(st.detect * 1.5, 0, 1) : (R.scared || 0);
+    const scared = st.mode === 'play' ? clamp(st.detect * 1.5, 0, 1) : R.scared;
     animRoach(roachMesh, { phase: R.walk, speed: sp / 6.4, time: st.clock, turn: R.turn, air: R.air, wing: R.wing, scared, carry: R.carry, squash: R.squash });
   }
   babies.forEach((b, i) => {
@@ -644,9 +780,10 @@ function syncMeshes(dt) {
   });
 
   if (grannyMesh.visible) {
-    const moving = G.route.length > 0 && G.state !== 'slip';
-    let tilt = moving ? Math.sin(G.walk) * 0.05 : 0, y = moving ? Math.abs(Math.sin(G.walk)) * 0.14 : 0;
-    if (G.state === 'slip') { // patas arriba
+    const moving = G.route.length > 0 && G.state !== 'slip', seated = G.kind === 'sleeper' && G.state !== 'cine';
+    let tilt = moving ? Math.sin(G.walk) * 0.05 : 0, y = moving ? Math.abs(Math.sin(G.walk)) * 0.14 : seated ? world.enemyPos.y : 0;
+    if (G.state === 'doze') tilt = -0.12 + Math.sin(st.clock * 1.6) * 0.04; // cabezadas
+    if (G.state === 'slip') {
       const e = 3.8 - G.t, down = clamp(e / 0.45, 0, 1), up = clamp(G.t / 0.6, 0, 1);
       tilt = Math.PI / 2 * Math.min(ease(down), up); y = Math.sin(down * Math.PI) * 1.6 + (down >= 1 && up >= 1 ? 0.75 : 0);
       if (e - dt < 0.45 && e >= 0.45) { st.shake = 0.55; sfx.slap(); burst(G.x, 0.2, G.z, '#e6dcc4', 16, 7, 4); ring(G.x, G.z, 4, '#ffffff', 0.5, 0.6); }
@@ -657,15 +794,20 @@ function syncMeshes(dt) {
     G.arm += ((hunting ? -0.5 : -2.5) - G.arm) * Math.min(1, dt * 7);
     u.arm.rotation.z = G.arm;
     u.held.visible = S.st === 'idle';
-    u.cone.visible = st.light > 0.5 && G.state !== 'gloat' && G.state !== 'slip';
+    u.cone.visible = st.light > 0.5 && !['gloat', 'slip', 'doze'].includes(G.state) && !seated;
     u.cone.material.color.set(hunting ? '#ff3030' : '#ff9f1c');
     u.cone.material.opacity = hunting ? 0.16 : 0.3;
-    if (hunting && Math.random() < dt * 9) burst(G.x, 5.6, G.z, '#ffffff', 1, 1.2, 2.5, 0.5, 3); // humo de cabreo
+    if (hunting && Math.random() < dt * 9) burst(G.x, 5.6 + y, G.z, '#ffffff', 1, 1.2, 2.5, 0.5, 3); // humo de cabreo
   }
 
   if (K.on) {
     catMesh.position.set(K.x, 0, K.z); catMesh.rotation.y = -K.face;
     animCat(catMesh, K.state, st.clock, K.walk, K.state === 'pounce' ? 1 - K.t / K.dur : 0);
+  }
+  for (const c of C) {
+    if (!c.on) continue;
+    c.mesh.position.set(c.x, 0, c.z); c.mesh.rotation.y = -c.face;
+    animChicken(c.mesh, c.state, st.clock, c.walk, c.state === 'peck' ? 1 - c.t / c.dur : 0);
   }
 
   const inWorld = ['play', 'intro', 'dawn', 'over'].includes(st.mode);
@@ -697,7 +839,7 @@ function syncMeshes(dt) {
 // ---------- HUD ----------
 const v3 = new THREE.Vector3();
 const proj = (x, y, z) => gfx.project(v3.set(x, y, z));
-const SOFT = '#b9c8ff', GREEN = '#9be7a0', RED = '#ff5a5a';
+const SOFT = '#b9c8ff', GREEN = '#9be7a0', RED = '#ff5a5a', BORDER_C = '#e9c46a';
 
 function pointer(x, z, label, color) {
   const p = proj(x, 1.4, z), { W, H } = hud, m = 16;
@@ -723,18 +865,20 @@ function drawWorldMarks() {
     }
     const p = proj(R.x, 1.3 + R.air, R.z);
     if (R.fill > 0) hud.bar(p.x - 9, p.y - 9, 18, 3, R.fill, GOLD);
-    if (st.detect > 0.02) {
+    if (st.detect > 0.02 && G.state === 'doze') { hud.bar(p.x - 10, p.y - 14, 20, 3, st.detect, st.detect > 0.6 ? RED : '#ffb347'); hud.text('ruido', p.x, p.y - 21, { color: st.detect > 0.6 ? RED : '#ffb347' }); }
+    else if (st.detect > 0.02) {
       const hunt = G.state === 'hunt';
       hud.eye(p.x, p.y - 18 - (hunt ? Math.abs(Math.sin(st.clock * 12)) * 2 : 0), st.detect, hunt);
       if (!hunt) hud.bar(p.x - 8, p.y - 12, 16, 2, st.detect, '#ffb347');
-    } else if (R.hidden && st.light > 0.5) hud.text('oculta', p.x, p.y - 12, { color: GREEN });
+    } else if (R.hidden && (st.light > 0.5 || C.some((c) => c.on))) hud.text('oculta', p.x, p.y - 12, { color: GREEN });
     if (R.poison > 0.1) hud.text('¡cof!', p.x + 14, p.y - 6, { color: '#7dff5c' });
   }
   if (grannyMesh.visible) {
-    const p = proj(G.x, G.state === 'slip' ? 2.5 : 6.6, G.z);
+    const p = proj(G.x, G.state === 'slip' ? 2.5 : 6.6 + (G.kind === 'sleeper' ? 0.7 : 0), G.z);
     if (G.state === 'slip') for (let i = 0; i < 3; i++) { const a = st.clock * 6 + i * 2.1; hud.text('*', p.x + Math.cos(a) * 12, p.y + Math.sin(a) * 4, { color: GOLD }); }
+    if (G.state === 'doze' && G.sayT <= 0) hud.text(st.detect > 0.6 ? '¿mm?' : 'z'.repeat(1 + Math.floor(st.clock * 1.5) % 3), p.x + 8, p.y + 6, { color: st.detect > 0.6 ? '#ffb347' : SOFT });
     if (G.sayT > 0) hud.bubble([G.say], p.x, Math.max(52, p.y), G.state === 'hunt' ? { bg: '#d62828', color: '#ffffff', shake: 2 } : {});
-    else if (st.mode === 'play' && (p.x < 0 || p.x > W || p.y > H + 60)) { // aviso de por dónde anda
+    else if (st.mode === 'play' && G.kind !== 'sleeper' && (p.x < 0 || p.x > W || p.y > H + 60)) { // aviso de por dónde anda
       const cx = clamp(p.x, 14, W - 14), cy = clamp(p.y - 30, 50, H - 40);
       hud.rect(cx - 5, cy - 5, 10, 10, INK); hud.rect(cx - 4, cy - 4, 8, 4, '#d62828'); hud.rect(cx - 3, cy, 6, 4, '#c68a5b'); hud.rect(cx - 2, cy + 1, 1, 1, INK); hud.rect(cx + 1, cy + 1, 1, 1, INK);
     }
@@ -745,6 +889,7 @@ function drawWorldMarks() {
     if (K.state === 'alert') hud.text('!', p.x, p.y - 4 - Math.abs(Math.sin(st.clock * 14)) * 3, { color: RED, scale: 2 });
     if (K.state === 'slide') hud.text('?!', p.x, p.y, { color: GOLD });
   }
+  for (const c of C) if (c.on && c.state === 'slide') { const p = proj(c.x, 2.4, c.z); hud.text('?!', p.x, p.y, { color: GOLD }); }
   for (const f of floaters) {
     const k = f.t / f.dur, p = proj(f.x, f.h + ease(k) * 1.6, f.z);
     if (k < 0.85 || Math.floor(st.clock * 20) % 2) hud.text(f.text, clamp(p.x, 30, W - 30), p.y, { color: f.color, scale: f.scale });
@@ -760,7 +905,7 @@ function drawPlayHud() {
   for (let i = 0; i < CARRY_MAX; i++) hud.drop(28 + i * 10, 24, GOLD, i >= R.carry);
   // la noche
   const k = clamp(st.time / st.nightLen, 0, 1), late = k > 0.8, bw = Math.min(110, W - 190), bx = cx - bw / 2;
-  hud.text(late && Math.floor(st.clock * 3) % 2 ? '¡AMANECE!' : `NOCHE ${st.night}`, cx, 8, { color: late ? '#ffa066' : SOFT });
+  hud.text(late && Math.floor(st.clock * 3) % 2 ? '¡AMANECE!' : `NOCHE ${st.night} · ${world.short}`, cx, 8, { color: late ? '#ffa066' : SOFT });
   hud.bar(bx, 17, bw, 4, k, late ? '#ff7a3b' : '#5a6ad0', '#1c2247');
   hud.moon(Math.round(bx + k * bw) - 2, 16); hud.sun(Math.round(bx + bw + 5), 16, st.clock);
   // puntos y vidas
@@ -786,62 +931,79 @@ function drawPlayHud() {
 
 function card(title, lines, color = GOLD, y0 = 0.3) {
   const { W, H } = hud, cx = W / 2, slide = (1 - ease(clamp(st.modeT * 3, 0, 1))) * W;
-  const w = Math.min(W - 20, 250), h = 30 + lines.length * 12, y = Math.round(H * y0);
+  const w = Math.min(W - 20, 270), h = 30 + lines.length * 12, y = Math.round(H * y0);
   hud.panel(cx - w / 2 - slide, y, w, h);
   hud.text(title, cx - slide, y + 14, { scale: 2, color });
   lines.forEach(([l, c], i) => hud.text(l, cx - slide, y + 31 + i * 12, { color: c || CREAM }));
 }
 
+function letterbox(cap, bar = 26) {
+  const { W, H } = hud;
+  hud.rect(0, 0, W, bar, INK); hud.rect(0, H - bar, W, bar, INK);
+  hud.rect(0, bar, W, 1, BORDER_C); hud.rect(0, H - bar - 1, W, 1, BORDER_C);
+  if (cap) { const lines = hud.wrap(cap.slice(0, Math.floor(cine.t * 34)), W - 30); lines.forEach((l, i) => hud.text(l, W / 2, H - bar + (lines.length > 1 ? 8 : 13) + i * 10, { color: CREAM, outline: null })); }
+  hud.text('ENTER: saltar', W - 6, 12, { align: 'right', color: '#6a6f9a', outline: null });
+}
+
+function drawTitle() {
+  const { W, H, g } = hud, cx = W / 2, t = st.clock, cy = Math.round(H * 0.3);
+  drawCity(g, W, H, t, 'night');
+  drawMoon(g, cx, cy, Math.round(H * 0.21));
+  const half = drawLogo(g, cx, cy, W, t);
+  hud.sysText('سراق الزيت', cx, cy + half + 18, 22, CREAM, ARABIC);
+  const dy = cy + half + 34;
+  for (let i = -7; i <= 7; i++) hud.rect(cx + i * 9 - 1, dy + (i % 2 ? 1 : 0), 3, 3, i % 2 ? '#3fa7d6' : BORDER_C);
+  hud.text('la cucaracha que roba el aceite', cx, dy + 13, { color: '#ffd9a0' });
+  drawRoof(g, W, H, t);
+  if (Math.floor(t * 2) % 2) { hud.panel(cx - 44, H - 62, 88, 18); hud.text('PULSA ENTER', cx, H - 53, { color: CREAM, outline: null }); }
+  if (st.best.score) hud.text(`récord: ${st.best.score} puntos · noche ${st.best.night}`, cx, H - 36, { color: '#b9b6e6' });
+}
+
+function drawCine() {
+  const { W, H, g } = hud, cx = W / 2, s = cine.steps[cine.i], t = st.clock - st.cineT, k = Math.min(1, cine.t / s.dur);
+  if (s.art === 'map') {
+    drawMap(hud, st.clock, s.map.from, s.map.to, k);
+    hud.text(s.title, cx, 13, { color: SOFT });
+    if (k > 0.25) hud.text(s.big, cx, 32, { scale: 2, color: GOLD });
+    const cap = s.cap.slice(0, Math.floor(Math.max(0, cine.t - 1.2) * 34));
+    if (cap) hud.wrap(cap, W - 30).forEach((l, i) => hud.text(l, cx, H - 18 + i * 10, { color: CREAM }));
+    hud.text('ENTER: saltar', W - 6, 8, { align: 'right', color: '#6a6f9a', outline: null });
+    return;
+  }
+  if (s.art) {
+    drawCity(g, W, H, t, s.art, (s.scroll || 0) * k + (s.art === 'dawn' ? t * 1.5 : 0));
+    if (s.art === 'night') drawMoon(g, Math.round(W * 0.22), Math.round(H * 0.3), Math.round(H * 0.1));
+    drawRoof(g, W, H, t, s.art === 'night');
+    if (s.big) { hud.text(s.big, cx + 3, H * 0.36 + 3, { scale: 6, color: '#5a1a3a', outline: null }); hud.text(s.big, cx, H * 0.36, { scale: 6, color: '#fff6d6', outline: null }); }
+    letterbox(s.cap);
+    return;
+  }
+  drawWorldMarks();
+  letterbox(s.cap);
+  if (s.say) {
+    const p = s.say.who === 'baby' ? proj(babies[0].x + 0.3, 1.6, world.hole.z) : proj(R.x, 2.2, R.z);
+    hud.bubble([s.say.text.slice(0, Math.floor(cine.t * 34)) || ' '], p.x, p.y);
+  }
+}
+
 function drawHud() {
   hud.clear();
   const { W, H } = hud, cx = W / 2;
-
-  if (st.mode === 'title') {
-    hud.rect(0, 0, W, H, 'rgba(6,7,18,0.38)');
-    const sc = W > 330 ? 5 : 4, title = 'SRAK L ZIT', tw = hud.width(title, sc), ty = Math.round(H * 0.2);
-    let x = cx - tw / 2;
-    for (const [i, ch] of [...title].entries()) { // letras que botan
-      const w = ch === ' ' ? 4 * sc : hud.width(ch, sc) + sc, bob = Math.round(Math.sin(st.clock * 3 - i * 0.5) * 2);
-      if (ch !== ' ') { hud.text(ch, x + 2, ty + bob + sc + 1, { scale: sc, color: INK, align: 'left', outline: null }); hud.text(ch, x, ty + bob + sc, { scale: sc, color: '#b3121d', align: 'left', outline: null }); hud.text(ch, x, ty + bob, { scale: sc, color: GOLD, align: 'left', outline: null }); }
-      x += w;
-    }
-    hud.sysText('سراق الزيت', cx, ty + 36, 24, CREAM, ARABIC);
-    for (let i = -6; i <= 6; i++) hud.rect(cx + i * 9 - 1, ty + 54 + (i % 2 ? 1 : 0), 3, 3, i % 2 ? '#2b5fa8' : BORDER_C);
-    hud.text('la cucaracha que roba el aceite', cx, ty + 68, { color: '#e9c46a' });
-    if (Math.floor(st.clock * 2) % 2) { const w = 86; hud.panel(cx - w / 2, H * 0.8 - 9, w, 18); hud.text('PULSA ENTER', cx, H * 0.8, { color: CREAM, outline: null }); }
-    const keysY = H - 20; let kx = cx - 150;
-    if (W > 320) for (const [k, l] of [['WASD', 'moverse'], ['SHIFT', 'correr'], ['ESP', 'vuelo'], ['E', 'soltar zit']]) { kx += hud.keycap(k, kx, keysY) + 3; kx += hud.text(l, kx, keysY + 5, { align: 'left', color: SOFT }) + 9; }
-    if (st.best.score) hud.text(`récord: ${st.best.score} puntos · noche ${st.best.night}`, cx, H - 32, { color: '#8fa0d8' });
-    return;
-  }
-
-  if (st.mode === 'cine') {
-    const s = cine.steps[cine.i], bar = 26;
-    drawWorldMarks();
-    hud.rect(0, 0, W, bar, INK); hud.rect(0, H - bar, W, bar, INK);
-    hud.rect(0, bar, W, 1, '#e9c46a'); hud.rect(0, H - bar - 1, W, 1, '#e9c46a');
-    const typed = (t) => t.slice(0, Math.floor(cine.t * 34));
-    if (s.cap) hud.wrap(typed(s.cap), W - 40).forEach((l, i) => hud.text(l, cx, H - bar + 10 + i * 10, { color: CREAM, outline: null }));
-    if (s.say) {
-      const p = s.say.who === 'baby' ? proj(babies[0].x + 0.3, 1.6, world.hole.z) : proj(R.x, 2.2, R.z);
-      hud.bubble([typed(s.say.text) || ' '], p.x, p.y);
-    }
-    hud.text('ENTER: saltar', W - 6, 12, { align: 'right', color: '#6a6f9a', outline: null });
-    return;
-  }
+  if (st.mode === 'title') return drawTitle();
+  if (st.mode === 'cine') return drawCine();
 
   drawWorldMarks();
   drawPlayHud();
 
-  if (st.banner) { // «¡¡SRAK ZIT!!» a toda pantalla
-    const k = st.banner.t / 0.9, hgt = Math.round(40 * Math.min(1, (1 - k) * 8, k * 6));
+  if (st.banner) { // el grito de alarma a toda pantalla
+    const k = st.banner.t / 0.9, hgt = Math.round(40 * Math.min(1, (1 - k) * 8, k * 6)), sc = W > 330 ? 4 : 3;
     hud.rect(0, H * 0.42 - hgt / 2, W, hgt, '#b3121d'); hud.rect(0, H * 0.42 - hgt / 2, W, 2, GOLD); hud.rect(0, H * 0.42 + hgt / 2 - 2, W, 2, GOLD);
-    if (hgt > 30) hud.text(st.banner.text, cx + 2, H * 0.42 + 2, { scale: W > 330 ? 4 : 3, color: '#5a0a10', outline: null }); hud.text(st.banner.text, cx + rand(-2, 2), H * 0.42 + rand(-1, 1), { scale: W > 330 ? 4 : 3, color: '#ffffff', outline: null });
+    if (hgt > 30) { hud.text(st.banner.text, cx + 2, H * 0.42 + 2, { scale: sc, color: '#5a0a10', outline: null }); hud.text(st.banner.text, cx + rand(-2, 2), H * 0.42 + rand(-1, 1), { scale: sc, color: '#ffffff', outline: null }); }
   }
 
-  if (st.mode === 'intro') card(`NOCHE ${st.night}`, [[`roba ${st.quota} gotas de zit antes del amanecer`], [st.news, GREEN]]);
+  if (st.mode === 'intro') card(`NOCHE ${st.night}`, [[`${world.name} · roba ${st.quota} gotas antes del amanecer`], [st.news, GREEN]]);
   else if (st.mode === 'clear') {
-    const r = st.res, t = st.modeT, rows = [['Zit robado', `${r.drops} gotas`], ['Tiempo sobrante', `+${r.time}`], [r.stealth ? 'Ni te ha visto' : 'Te ha visto', `+${r.stealth}`], ['Vidas', `+${r.lives}`]];
+    const r = st.res, t = st.modeT, rows = [['Zit robado', `${r.drops} gotas`], ['Tiempo sobrante', `+${r.time}`], [r.stealth ? 'Sin dar la alarma' : 'Han dado la alarma', `+${r.stealth}`], ['Vidas', `+${r.lives}`]];
     const w = Math.min(W - 20, 210), h = 100, x = cx - w / 2, y = Math.round(H * 0.44);
     hud.panel(x, y, w, h);
     hud.text('¡ZIT ROBADO!', cx, y + 14, { scale: 2, color: GOLD });
@@ -849,8 +1011,8 @@ function drawHud() {
       if (t < 0.7 + i * 0.45) return;
       hud.text(a, x + 14, y + 34 + i * 12, { align: 'left', color: CREAM, outline: null }); hud.text(b, x + w - 14, y + 34 + i * 12, { align: 'right', color: i === 2 && !r.stealth ? '#8a86a0' : GREEN, outline: null });
     });
-    if (t > 2.7) { hud.rect(x + 12, y + 79, w - 24, 1, '#e9c46a'); hud.text('TOTAL', x + 14, y + 88, { align: 'left', color: GOLD, outline: null }); hud.text(st.score, x + w - 14, y + 88, { align: 'right', color: GOLD, outline: null }); }
-    if (t > 3.4 && Math.floor(st.clock * 2) % 2) hud.text('ENTER: siguiente noche', cx, y + h + 10, { color: CREAM });
+    if (t > 2.7) { hud.rect(x + 12, y + 79, w - 24, 1, BORDER_C); hud.text('TOTAL', x + 14, y + 88, { align: 'left', color: GOLD, outline: null }); hud.text(st.score, x + w - 14, y + 88, { align: 'right', color: GOLD, outline: null }); }
+    if (t > 3.4 && Math.floor(st.clock * 2) % 2) hud.text('ENTER: seguir', cx, y + h + 10, { color: CREAM });
   } else if (st.mode === 'dawn') card('AMANECE...', [['no has robado bastante zit'], ['pierdes una vida', RED]], '#ffa066');
   else if (st.mode === 'over') {
     hud.rect(0, 0, W, H, 'rgba(6,7,18,0.6)');
@@ -858,7 +1020,7 @@ function drawHud() {
     hud.panel(cx - w / 2, y, w, 120);
     hud.text('SAFI', cx, y + 22, { scale: 4, color: RED, outline: null });
     hud.wrap(st.reason, w - 20).forEach((l, i) => hud.text(l, cx, y + 48 + i * 10, { color: CREAM, outline: null }));
-    hud.text(`${st.score} puntos · noche ${st.night}`, cx, y + 76, { color: GOLD, outline: null });
+    hud.text(`${st.score} puntos · noche ${st.night} · ${world.short}`, cx, y + 76, { color: GOLD, outline: null });
     hud.text(st.score >= st.best.score && st.score > 0 ? '¡nuevo récord!' : `récord: ${st.best.score}`, cx, y + 90, { color: SOFT, outline: null });
     if (st.modeT > 1 && Math.floor(st.clock * 2) % 2) hud.text('ENTER: otra vez', cx, y + 106, { color: CREAM, outline: null });
   }
@@ -872,12 +1034,16 @@ function drawHud() {
     });
   }
 }
-const BORDER_C = '#e9c46a';
 
 // ---------- bucle ----------
 function update(raw) {
   st.clock += raw; st.punchOil -= raw; st.punchScore -= raw;
   if (st.banner && (st.banner.t -= raw) <= 0) st.banner = null;
+  // música: tema del sitio y capa según el peligro
+  const chase = G.state === 'hunt' || K.state === 'alert' || K.state === 'pounce' || C.some((c) => c.on && (c.state === 'chase' || c.state === 'peck'));
+  if (st.mode === 'play') sfx.music(world.theme, chase ? 2 : (grannyMesh.visible && G.state !== 'doze') || C.some((c) => c.on) ? 1 : 0);
+  else if (st.mode === 'cine') sfx.music(cine.steps[cine.i].art === 'dawn' ? 'dawn' : cine.steps[cine.i].cam ? world.theme : 'title', 0);
+  else sfx.music(st.mode === 'title' || st.mode === 'over' ? 'title' : world.theme, 0);
   if (st.freeze > 0) { st.freeze -= raw; updateCamera(0, raw); return; }
   st.slow = Math.max(0, st.slow - raw);
   const dt = raw * (st.slow > 0 ? 0.3 : 1);
@@ -886,23 +1052,22 @@ function update(raw) {
   if (st.mode === 'play') {
     st.time += dt;
     updateRoach(dt);
-    if (st.mode === 'play') { updateGranny(dt); updateSlipper(dt); updateSpray(dt); updateCat(dt); }
+    if (st.mode === 'play') { updateGranny(dt); updateSlipper(dt); updateSpray(dt); updateCat(dt); updateChicks(dt); }
     if (st.mode === 'play' && st.time >= st.nightLen) {
       st.lives--; sfx.lose();
       if (st.lives <= 0) endRun('Salió el sol y la colonia se quedó sin zit.'); else { st.mode = 'dawn'; st.modeT = 0; }
     }
-    sfx.music(dt, G.state === 'hunt' ? 2 : grannyMesh.visible ? 1 : 0);
   } else if (st.mode === 'cine') updateCine(dt);
   else {
     st.modeT += dt;
-    if (st.mode === 'intro' && st.modeT > 3.2) st.mode = 'play';
+    if (st.mode === 'intro' && st.modeT > 3.4) st.mode = 'play';
     else if (st.mode === 'dawn' && st.modeT > 3.2) startNight(st.night);
     else if (st.mode === 'clear') { // bailecito de la victoria
       R.head += dt * 9; R.air = Math.abs(Math.sin(st.modeT * 7)) * 0.45; R.wing = 0.6; R.carry = 0;
       babies.forEach((b, i) => { if (b.hop <= 0 && Math.sin(st.modeT * 9 + i * 2) > 0.7) b.hop = 0.4; });
       if (Math.random() < dt * 14) burst(world.hole.x + rand(0, 3), rand(1.5, 3), world.hole.z + rand(-2, 2), pick(['#ffd23f', '#fff6d6', '#f2b705']), 1, 1, 2, 0.9, 5);
       for (const [i, at] of [0.7, 1.15, 1.6, 2.05, 2.7].entries()) if (st.modeT - dt < at && st.modeT >= at) (i === 4 ? sfx.bonus() : sfx.tick());
-      if (st.modeT > 9) startNight(st.night + 1);
+      if (st.modeT > 9) nextNight();
     }
   }
   updateLight(dt); updateCamera(dt, raw); syncMeshes(dt);
@@ -925,6 +1090,7 @@ function resize() {
 
 addEventListener('resize', resize);
 addEventListener('blur', () => keys.clear());
+addEventListener('pointerdown', () => sfx.init());
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('keydown', (e) => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
@@ -935,12 +1101,12 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Enter' || (e.code === 'Space' && st.mode !== 'play')) {
     if (st.mode === 'title' || (st.mode === 'over' && st.modeT > 1)) startGame();
     else if (st.mode === 'cine') endCine();
-    else if (st.mode === 'clear' && st.modeT > 2.9) startNight(st.night + 1);
+    else if (st.mode === 'clear' && st.modeT > 2.9) nextNight();
     else if (st.mode === 'intro' && st.modeT > 0.6) st.mode = 'play';
   }
 });
 
 resize();
-resetRoach(); Object.assign(R, { x: -7, z: 6, head: 0.8, inv: 0 });
+loadLevel(0); resetRoach();
 requestAnimationFrame(frame);
-window.game = { st, R, G, K, S, P, world, gfx, keys, pressed, slicks, startGame, startNight, playIntro, update, killRoach, setLight, clearNight };
+window.game = { sfx, st, R, G, K, C, S, P, LV, gfx, keys, pressed, slicks, cine, get world() { return world; }, startGame, startNight, goNight, playEnding, update, killRoach, setLight, clearNight, endCine };

@@ -106,19 +106,29 @@ export function makeSlipper() {
   return g;
 }
 
-export function makeGranny() {
+// look: 'jadda' (la abuela), 'jeddi' (el abuelo dormilón) o 'keeper' (Si Brahim, el del hanout)
+export function makeGranny(look = 'jadda') {
   const g = new THREE.Group();
-  const robe = '#7d3c98';
+  const robe = look === 'jeddi' ? '#efe9d8' : look === 'keeper' ? '#2b5fa8' : '#7d3c98';
+  const trim = look === 'jeddi' ? '#c9b47f' : look === 'keeper' ? '#f1faee' : '#e9c46a';
   put(g, cyl(0.7, 1.45, 4.2, robe, 12), 0, 2.1, 0);                // djellaba
-  put(g, cyl(1.47, 1.5, 0.3, '#e9c46a', 12), 0, 0.3, 0);
-  put(g, cyl(0.72, 0.8, 0.22, '#e9c46a', 12), 0, 4.1, 0);
-  put(g, box(0.1, 2.6, 0.16, '#e9c46a'), 0.98, 2.8, 0).rotation.z = 0.19;
-  put(g, sph(0.72, '#c68a5b', 10, 8), 0, 4.85, 0);                 // cabeza y pañuelo
-  put(g, sph(0.8, '#d62828', 10, 8), -0.16, 4.98, 0);
-  put(g, sph(0.24, '#d62828', 6, 5), -0.9, 4.6, 0);
+  put(g, cyl(1.47, 1.5, 0.3, trim, 12), 0, 0.3, 0);
+  put(g, cyl(0.72, 0.8, 0.22, trim, 12), 0, 4.1, 0);
+  put(g, box(0.1, 2.6, 0.16, trim), 0.98, 2.8, 0).rotation.z = 0.19;
+  put(g, sph(0.72, '#c68a5b', 10, 8), 0, 4.85, 0);                 // cabeza
+  if (look === 'jadda') { // pañuelo
+    put(g, sph(0.8, '#d62828', 10, 8), -0.16, 4.98, 0);
+    put(g, sph(0.24, '#d62828', 6, 5), -0.9, 4.6, 0);
+  } else if (look === 'jeddi') { // tarbouch y barba blanca
+    put(g, cyl(0.42, 0.52, 0.6, '#c1121f', 10), -0.05, 5.7, 0);
+    put(g, sph(0.5, '#f4f1ea', 8, 6), 0.3, 4.42, 0).scale.set(0.8, 1, 1.1);
+  } else { // gorro blanco y bigote
+    put(g, sph(0.76, '#f4f1ea', 10, 6), -0.04, 5.12, 0).scale.y = 0.55;
+    put(g, box(0.1, 0.1, 0.5, '#1b1b1b'), 0.72, 4.56, 0);
+  }
   for (const s of [-1, 1]) {
     put(g, box(0.08, 0.12, 0.14, '#1b1b1b'), 0.69, 4.9, s * 0.25);
-    put(g, box(0.08, 0.06, 0.26, '#3a2414'), 0.7, 5.06, s * 0.27).rotation.x = s * 0.35; // ceño
+    put(g, box(0.08, 0.06, 0.26, look === 'jeddi' ? '#f4f1ea' : '#3a2414'), 0.7, 5.06, s * 0.27).rotation.x = s * 0.35; // ceño
     put(g, box(0.75, 0.22, 0.44, '#f4c20d'), 1.2, 0.11, s * 0.5);  // belghas
   }
   put(g, sph(0.13, '#b87a4e', 6, 5), 0.74, 4.72, 0);
@@ -137,6 +147,42 @@ export function makeGranny() {
 
   g.userData = { arm, held, cone };
   return g;
+}
+
+export function makeChicken() {
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  put(body, sph(1, '#f6f1e4', 9, 7), 0, 0.8, 0).scale.set(0.62, 0.5, 0.45);
+  put(body, box(0.3, 0.5, 0.12, '#e2dbc8'), -0.6, 1.08, 0).rotation.z = -0.5;      // cola
+  const head = new THREE.Group(); head.position.set(0.5, 1.28, 0); body.add(head);
+  put(head, sph(0.25, '#f6f1e4', 7, 5), 0, 0, 0);
+  put(head, box(0.22, 0.15, 0.07, '#d62828'), 0, 0.27, 0);                          // cresta
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.24, 4), toon('#f4a20d')); beak.rotation.z = -Math.PI / 2; beak.castShadow = true;
+  put(head, beak, 0.31, -0.02, 0);
+  put(head, box(0.07, 0.13, 0.09, '#d62828'), 0.2, -0.17, 0);
+  for (const s of [-1, 1]) put(head, sph(0.045, basic('#0b0b12'), 5, 4), 0.14, 0.07, s * 0.19).castShadow = false;
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const l = new THREE.Group(); l.position.set(0, 0.46, s * 0.15); body.add(l);
+    put(l, box(0.06, 0.46, 0.06, '#f4a20d'), 0, -0.23, 0); put(l, box(0.22, 0.05, 0.16, '#f4a20d'), 0.06, -0.45, 0);
+    l.userData.s = s; legs.push(l);
+  }
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material.isMeshToonMaterial) return;
+    o.material = o.material.clone(); o.material.emissive.copy(o.material.color).multiplyScalar(0.3);
+  });
+  root.scale.setScalar(1.3);
+  root.userData = { body, head, legs };
+  return root;
+}
+
+// state: wander | chase | peck | rest | slide
+export function animChicken(root, state, time, walk, k) {
+  const u = root.userData, moving = state === 'wander' || state === 'chase';
+  for (const l of u.legs) l.rotation.z = moving ? Math.sin(walk + (l.userData.s > 0 ? 0 : Math.PI)) * 0.6 : 0;
+  u.head.position.x = 0.5 + (moving ? Math.sin(walk * 2) * 0.07 : 0);
+  u.head.rotation.z = state === 'peck' ? (k < 0.7 ? 0.5 * (k / 0.7) : 0.5 - 2.2 * ((k - 0.7) / 0.3)) : 0;
+  u.body.rotation.y = state === 'slide' ? time * 13 : 0;
+  u.body.position.y = state === 'chase' ? Math.abs(Math.sin(walk)) * 0.12 : 0;
 }
 
 export function makeCat() {

@@ -41,7 +41,7 @@ const SRC = {
   'í': '.X|..|X.|X.|X.|X.|X.',
 };
 
-const GLYPHS = {};
+export const GLYPHS = {};
 for (const [ch, rows] of Object.entries(SRC)) { const r = rows.split('|'); GLYPHS[ch] = { rows: r, w: r[0].length, y: 0 }; }
 for (const [acc, base] of [['á', 'a'], ['é', 'e'], ['ó', 'o'], ['ú', 'u'], ['ñ', 'n']]) {
   const r = [...GLYPHS[base].rows]; r[0] = acc === 'ñ' ? '.XXX.' : '...X.';
