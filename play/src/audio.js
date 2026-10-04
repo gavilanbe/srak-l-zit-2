@@ -49,6 +49,17 @@ export class Sfx {
   win() { [0, 4, 5, 7, 12, 16].forEach((s, i) => this.tone(293.66 * 2 ** (s / 12), 0.2, { vol: 0.11, at: i * 0.11 })); }
   lose() { [7, 5, 4, 1, 0].forEach((s, i) => this.tone(220 * 2 ** (s / 12), 0.28, { type: 'triangle', vol: 0.14, at: i * 0.2 })); }
 
+  dash() { this.tone(170, 0.22, { type: 'sawtooth', vol: 0.09, to: 320 }); this.noise(0.2, { vol: 0.08, freq: 2200, type: 'bandpass' }); }
+  drip() { this.tone(900, 0.07, { type: 'sine', vol: 0.12, to: 400 }); }
+  meow() { this.tone(620, 0.16, { type: 'triangle', vol: 0.13, to: 880 }); this.tone(880, 0.28, { type: 'triangle', vol: 0.13, to: 520, at: 0.16 }); }
+  hiss() { this.noise(0.4, { vol: 0.16, freq: 5000, type: 'highpass' }); }
+  slip() { this.tone(1100, 0.45, { type: 'sine', vol: 0.14, to: 180 }); this.noise(0.3, { vol: 0.4, freq: 500, at: 0.45 }); this.tone(90, 0.3, { type: 'sine', vol: 0.3, to: 40, at: 0.45 }); }
+  tick() { this.tone(1200, 0.04, { vol: 0.07 }); }
+  blip() { this.tone(520 + Math.random() * 80, 0.03, { vol: 0.04 }); }
+  bonus() { [7, 12, 16].forEach((s, i) => this.tone(587.33 * 2 ** (s / 12), 0.1, { vol: 0.09, at: i * 0.06 })); }
+  coin(i) { this.tone(523.25 * 2 ** (HIJAZ[i % HIJAZ.length] / 12), 0.12, { vol: 0.12 }); }
+  gulp() { this.tone(300, 0.1, { type: 'sine', vol: 0.15, to: 140 }); }
+
   // intensity: 0 = a oscuras, 1 = la jadda en la cocina, 2 = persecución
   music(dt, intensity) {
     if (!this.ctx) return;

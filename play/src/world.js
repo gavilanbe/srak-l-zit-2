@@ -36,6 +36,8 @@ function rugTex(g, w, h) {
   for (let x = 1; x < w; x += 3) { g.fillRect(x, 0, 1, 1); g.fillRect(x, h - 1, 1, 1); } // flecos
 }
 
+const SHADE = new THREE.MeshBasicMaterial({ color: '#0a0820', transparent: true, opacity: 0.3, depthWrite: false });
+
 export function buildWorld(scene) {
   const W = { colliders: [], covers: [], oil: [], glue: [], scene };
   const solid = (x0, x1, z0, z1) => W.colliders.push({ x0, x1, z0, z1 });
@@ -125,7 +127,9 @@ export function buildWorld(scene) {
       put(scene, box(leg, h - 0.3, leg, color), lx, (h - 0.3) / 2, lz);
       solid(lx - leg / 2, lx + leg / 2, lz - leg / 2, lz + leg / 2);
     }
-    const cover = { id, x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2, h, top, under: false };
+    // sombra pintada: marca el escondite cuando el tablero se aparta
+    const decal = put(scene, plane(w, d, SHADE), x, 0.02, z); decal.rotation.x = -Math.PI / 2; decal.visible = false;
+    const cover = { id, x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2, h, top, under: false, low: h < 2.5, decal };
     W.covers.push(cover);
     return cover;
   }
@@ -159,7 +163,8 @@ export function buildWorld(scene) {
     const lx = 10.5 + Math.cos(a) * 1.0, lz = 2.5 + Math.sin(a) * 1.0;
     put(scene, box(0.2, 1.25, 0.2, '#6b4a16'), lx, 0.62, lz); solid(lx - 0.1, lx + 0.1, lz - 0.1, lz + 0.1);
   }
-  W.covers.push({ id: 'te', x0: 9.3, x1: 11.7, z0: 1.3, z1: 3.7, h: 1.3, top: tea, under: false });
+  const teaDecal = put(scene, plane(2.4, 2.4, SHADE), 10.5, 0.02, 2.5); teaDecal.rotation.x = -Math.PI / 2; teaDecal.visible = false;
+  W.covers.push({ id: 'te', x0: 9.3, x1: 11.7, z0: 1.3, z1: 3.7, h: 1.3, top: tea, under: false, low: true, decal: teaDecal });
 
   // ---- el zit ----
   const bidon = new THREE.Group(); scene.add(bidon);
@@ -171,7 +176,7 @@ export function buildWorld(scene) {
   bidon.position.set(13.7, 0, 8.3); bidon.rotation.y = 0.5;
   round(13.7, 8.3, 0.85);
   const puddle = put(scene, cyl(1.35, 1.35, 0.03, basic('#f2b705'), 14), 13.5, 0.02, 8.0); puddle.castShadow = false;
-  W.oil.push({ x: 13.6, z: 8.2, r: 2.0, minNight: 1, name: 'bidón' });
+  W.oil.push({ x: 13.6, z: 8.2, r: 2.0, minNight: 1, name: 'bidón', rate: 1.0 });
 
   const bottle = W.bottle = new THREE.Group(); scene.add(bottle);
   put(bottle, cyl(0.4, 0.4, 1.3, '#3a7d44', 8), 0, 0.65, 0);
@@ -181,7 +186,7 @@ export function buildWorld(scene) {
   bottle.position.set(3.0, 0, -8.9);
   W.bottleCollider = { x: 3.0, z: -8.9, r: 0.5, off: true };
   W.colliders.push(W.bottleCollider);
-  W.oil.push({ x: 3.1, z: -8.6, r: 1.6, minNight: 2, name: 'botella' });
+  W.oil.push({ x: 3.1, z: -8.6, r: 1.6, minNight: 2, name: 'botella', rate: 0.85 });
 
   // trampas de pegamento (se activan según la noche)
   for (const [x, z, a] of [[6.6, 4.2, 0.3], [-9.2, 5.6, -0.2], [11.8, -1.2, 1.2], [-3, -4.4, 0.1], [3.4, 8.6, 0]]) {
@@ -197,6 +202,20 @@ export function buildWorld(scene) {
   W.edges = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 1], [6, 7], [7, 0], [1, 7]];
   W.adj = W.nodes.map(() => []);
   for (const [a, b] of W.edges) { W.adj[a].push(b); W.adj[b].push(a); }
+
+  // platitos de zit con khobz: pocas gotas pero rápidas, cambian de sitio cada noche
+  W.plates = [];
+  for (let i = 0; i < 3; i++) {
+    const g = new THREE.Group(); scene.add(g);
+    put(g, cyl(0.8, 0.55, 0.14, '#f1faee', 12), 0, 0.07, 0);
+    put(g, cyl(0.82, 0.8, 0.04, '#2b5fa8', 12), 0, 0.14, 0);
+    const oil = put(g, cyl(0.56, 0.56, 0.05, basic('#f2b705'), 10), 0, 0.16, 0); oil.castShadow = false;
+    put(g, sph(0.34, '#d9a441', 8, 5), 0.7, 0.14, 0.35).scale.y = 0.45;
+    g.visible = false;
+    W.plates.push({ mesh: g, oil, x: 0, z: 0, r: 1.3, amount: 0, on: false, rate: 0.45, name: 'platito' });
+  }
+  W.plateSpots = [[-6, 6.6], [4.2, -1.4], [7.8, -5.4], [-10.6, -1.4], [1.6, 5.4], [12.8, -5.6], [5.4, 9], [-3, -6]];
+  W.catSpots = [[-4.6, 5.6], [3.8, 3.4], [6.8, -3.4], [-7.4, -4.4], [11.6, 5.2], [0.4, -6]];
 
   W.dropSpots = [[-10, -2], [-5, -4.8], [3.5, 4.8], [7.5, -3], [12.5, -7], [13.3, 4.6], [-12, 2.6], [2.6, 8.8], [6.5, -8.6], [-8.5, 8.4], [4.2, -1]];
   return W;

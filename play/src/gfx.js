@@ -15,8 +15,11 @@ uniform sampler2D tDepth;
 uniform vec2 texel;
 uniform float range;
 uniform float flash;
+uniform float danger;
 uniform vec3 tint;
 varying vec2 vUv;
+float bayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
+float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
 float D(vec2 o) { return texture2D(tDepth, vUv + o * texel).x * range; }
 void main() {
   vec3 col = texture2D(tColor, vUv).rgb;
@@ -29,6 +32,13 @@ void main() {
   else if (lap > 0.06) col = col * 1.3 + 0.03;
   else if (lap < -0.09 && lap > -0.45) col *= 0.78;
   col *= tint;
+  // viñeta por escalones con tramado, y borde rojo cuando hay peligro
+  float bd = bayer4(gl_FragCoord.xy);
+  float d = length((vUv - 0.5) * vec2(1.15, 1.0));
+  float v = floor(clamp((d - 0.42) * 2.6, 0.0, 1.0) * 4.0 + bd) / 4.0;
+  col *= 1.0 - v * 0.4;
+  float dv = floor(clamp((d - 0.28) * 2.3, 0.0, 1.0) * 4.0 + bd) / 4.0;
+  col = mix(col, col * vec3(1.25, 0.45, 0.4) + vec3(0.14, 0.0, 0.0), dv * danger);
   col = mix(col, vec3(1.0), flash);
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
@@ -63,7 +73,7 @@ export class Gfx {
       vertexShader: POST_VERT, fragmentShader: POST_FRAG, depthTest: false, depthWrite: false,
       uniforms: {
         tColor: { value: null }, tDepth: { value: null }, texel: { value: new THREE.Vector2() },
-        range: { value: this.far - this.near }, flash: { value: 0 }, tint: { value: new THREE.Color(1, 1, 1) },
+        range: { value: this.far - this.near }, flash: { value: 0 }, danger: { value: 0 }, tint: { value: new THREE.Color(1, 1, 1) },
       },
     });
     this.postScene = new THREE.Scene();
@@ -93,14 +103,16 @@ export class Gfx {
     c.updateProjectionMatrix();
   }
 
+  setZoom(z) { if (this.camera.zoom !== z) { this.camera.zoom = z; this.camera.updateProjectionMatrix(); } }
+
   // Coloca la cámara ajustada a la rejilla de píxeles y compensa el resto moviendo el canvas.
   setTarget(t) {
-    const r = t.dot(this.right), u = t.dot(this.up);
-    const rs = Math.round(r * PPU) / PPU, us = Math.round(u * PPU) / PPU;
+    const r = t.dot(this.right), u = t.dot(this.up), P = PPU * this.camera.zoom;
+    const rs = Math.round(r * P) / P, us = Math.round(u * P) / P;
     this._t.copy(t).addScaledVector(this.right, rs - r).addScaledVector(this.up, us - u);
     this.camera.position.copy(this._t).addScaledVector(this.dir, this.camDist);
     this.camera.updateMatrixWorld();
-    this.offX = -(r - rs) * PPU; this.offY = (u - us) * PPU;
+    this.offX = -(r - rs) * P; this.offY = (u - us) * P;
     this.canvas.style.transform = `translate(${this.offX * this.scale}px, ${this.offY * this.scale}px)`;
   }
 
