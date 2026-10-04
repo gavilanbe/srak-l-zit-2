@@ -3,7 +3,7 @@ import { THREE, Gfx, basic, sph, put, GHOST } from './gfx.js';
 import { buildLevels, ROOM } from './world.js';
 import { makeRoach, animRoach, makeGranny, makeSlipper, makeCat, animCat, makeChicken, animChicken } from './actors.js';
 import { Hud, INK, GOLD, CREAM } from './hud.js';
-import { drawCity, drawMoon, drawRoof, drawLogo, drawMap } from './art.js';
+import { drawCity, drawMoon, drawRoof, drawLogo, drawClouds, drawTravel } from './art.js';
 import { Sfx } from './audio.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -110,7 +110,7 @@ const st = {
   mode: 'title', modeT: 0, night: 1, plan: plan(1), quota: 6, stolen: 0, score: 0, combo: 1, lives: 3, time: 0, nightLen: 90,
   detect: 0, lightOn: false, lightT: 9, light: 0, shake: 0, flash: 0, msg: '', msgT: 0, clock: 0, paused: false,
   freeze: 0, slow: 0, kick: 0, zoom: 1, danger: 0, seen: false, punchOil: 0, punchScore: 0, banner: null, news: '',
-  res: null, tut: 0, reason: '', introSeen: false, cineT: 0,
+  res: null, tut: 0, reason: '', introSeen: false, cineT: 0, titleT0: 0, irisIn: 0,
   best: { score: 0, night: 0, ...JSON.parse(localStorage.getItem('srak-l-zit.best') || '{}') },
 };
 const cam = new THREE.Vector3(-8, 0, 3);
@@ -185,11 +185,12 @@ function startGame() {
 function goNight(n) {
   const p = plan(n), prev = n > 1 ? plan(n - 1) : null;
   if ((prev && prev.lv === p.lv) || (n === 1 && st.introSeen)) return startNight(n);
-  const L = LV.levels[p.lv], steps = [];
-  if (n === 1) steps.push(...openingSteps());
-  steps.push({ dur: 4.4, art: 'map', map: { from: prev ? prev.lv : null, to: p.lv }, title: `CAPÍTULO ${p.lv + 1}${p.loop ? ' · OTRA VUELTA' : ''}`, big: L.name, cap: L.sub });
-  steps.push(...(n === 1 ? kitchenSteps() : placeSteps(n)));
-  playCine(steps, () => { st.introSeen = true; R.scared = 0; startNight(n); });
+  const L = LV.levels[p.lv];
+  const travel = { dur: 7.2, art: 'map', map: { from: prev ? prev.lv : null, to: p.lv }, info: { chapter: p.lv + 1, name: L.name, sub: L.sub, loop: p.loop }, iris: 'out', fade: true };
+  const logoDrop = { dur: 3.6, art: 'logo', fade: true, update: (dt) => { if (cine.t < 1.2 && cine.t + dt >= 1.2) { sfx.slap(); sfx.win(); } } };
+  // la primera vez: apertura, la cocina, el título y el plano; después, plano y presentación del sitio
+  const steps = n === 1 ? [...openingSteps(), ...kitchenSteps(), logoDrop, travel] : [travel, ...placeSteps(n)];
+  playCine(steps, () => { st.introSeen = true; R.scared = 0; startNight(n); st.irisIn = 0.55; });
 }
 
 function resetRoach() {
@@ -674,7 +675,12 @@ function updateChicks(dt) {
 }
 
 // ---------- cinemáticas ----------
-function playCine(steps, done) { Object.assign(cine, { steps, i: 0, t: 0, done }); st.mode = 'cine'; st.cineT = st.clock; steps[0].enter?.(); }
+function enterStep(i) { // al abrir con iris, la cámara ya está en su sitio
+  const s = cine.steps[i];
+  if (s.cam && (s.iris === 'in' || s.iris === 'both')) { cam.x = s.cam[0]; cam.z = s.cam[1]; cam.y = 0; st.zoom = s.cam[2]; }
+  s.enter?.();
+}
+function playCine(steps, done) { Object.assign(cine, { steps, i: 0, t: 0, done }); st.mode = 'cine'; st.cineT = st.clock; enterStep(0); }
 function endCine() { const d = cine.done; cine.steps = null; grannyMesh.visible = false; world.doorGlow.visible = false; G.sayT = 0; d(); }
 function updateCine(dt) {
   const s = cine.steps[cine.i], before = cine.t;
@@ -682,20 +688,23 @@ function updateCine(dt) {
   cine.t += dt;
   const text = s.cap || s.say?.text;
   if (text && Math.floor(before * 34) !== Math.floor(cine.t * 34) && cine.t * 34 < text.length && Math.floor(cine.t * 34) % 2 === 0) sfx.blip();
-  if (cine.t >= s.dur) { cine.i++; cine.t = 0; if (cine.i >= cine.steps.length) endCine(); else cine.steps[cine.i].enter?.(); }
+  if (cine.t >= s.dur) { cine.i++; cine.t = 0; if (cine.i >= cine.steps.length) endCine(); else enterStep(cine.i); }
 }
 const place = (x, z, head) => { Object.assign(R, { x, z, head, vx: 0, vz: 0, y: 0, vy: 0, air: 0, wing: 0, carry: 0, alive: true, inv: 0, scared: 0 }); };
 
 const openingSteps = () => [
-  { dur: 3.6, art: 'night', cap: 'Marrakech. Las 3:07 de la madrugada.' },
-  { dur: 4.2, art: 'night', scroll: 26, cap: 'La medina duerme. Bajo una cocina, una familia tiene hambre.' },
+  { dur: 4.6, art: 'night', reveal: true, cap: 'Marrakech. Las 3:07 de la madrugada.' },
+  { dur: 4.6, art: 'night', scroll: 26, cap: 'La medina duerme. Todos, menos una familia con hambre.' },
+  { dur: 3.4, art: 'night', scroll0: 26, zoom: [1, 5], focus: [0.5, 0.86], cap: 'Detrás de una pared. Debajo de una cocina.', iris: 'out' },
 ];
 
 function kitchenSteps() {
   const L = LV.levels[0], h = L.hole, oil = L.oil[0], door = L.nodes[0];
   return [
+    { dur: 4.0, cam: [7, -3.5, 1.1], cam2: [-8.5, 4, 1.3], cap: 'La cocina de la jadda. Territorio enemigo.', iris: 'in',
+      enter: () => { prep(1); place(h.x - 1.2, h.z, 0); G.state = 'cine'; roachMesh.visible = false; } },
     { dur: 2.9, cam: [h.x + 2, h.z, 1.7], say: { who: 'baby', text: '¡Baba! ¡Tenemos hambre!' },
-      enter: () => { prep(1); place(h.x - 1.2, h.z, 0); G.state = 'cine'; },
+      enter: () => { roachMesh.visible = true; },
       update: (dt, k) => { R.x = lerp(h.x - 0.8, h.x + 3.2, ease(Math.min(1, k * 1.6))); R.vx = k < 0.6 ? 4 : 0; if (k > 0.6) R.head += wrap(Math.PI - R.head) * Math.min(1, dt * 8); babies.forEach((b, i) => { if (Math.sin(k * 20 + i * 2) > 0.9) b.hop = 0.3; }); } },
     { dur: 3.0, cam: [h.x + 2, h.z, 1.7], say: { who: 'roach', text: 'Tranquilos, wlidati. Hoy cenamos zit.' },
       enter: () => { R.vx = 0; R.head = Math.PI; }, update: (dt, k) => { R.air = k > 0.7 && k < 0.85 ? Math.sin((k - 0.7) / 0.15 * Math.PI) * 0.4 : 0; } },
@@ -720,7 +729,7 @@ function placeSteps(n) {
   const p = plan(n), L = LV.levels[p.lv], h = L.hole, oil = L.oil[0];
   const th = L.enemyPos || (p.chicks && L.chickSpots ? { x: L.chickSpots[0][0], z: L.chickSpots[0][1] } : L.nodes[Math.min(1, L.nodes.length - 1)]);
   return [
-    { dur: 3.6, cam: [th.x, th.z + 1, 1.35], cap: L.capThreat || 'La jadda sigue de guardia. Y está de peor humor.', enter: () => { prep(n); place(h.x + 1.4, h.z, 0); } },
+    { dur: 3.6, cam: [th.x, th.z + 1, 1.35], iris: 'in', cap: L.capThreat || 'La jadda sigue de guardia. Y está de peor humor.', enter: () => { prep(n); place(h.x + 1.4, h.z, 0); } },
     { dur: 3.2, cam: [oil.x - 1.5, oil.z - 1.5, 1.4], cap: L.capOil || 'El bidón sigue ahí. Esperándote.',
       update: () => { if (Math.random() < 0.12) burst(oil.x + rand(-1, 1), rand(0.5, 2), oil.z + rand(-1, 1), '#fff6d6', 1, 0.3, 0.8, 0.5, 2); } },
     { dur: 1.9, cam: [h.x + 2, h.z, 1.8], say: { who: 'roach', text: pick(['¡Yallah!', 'Bismillah...', 'Por los wlidat.']) },
@@ -769,7 +778,10 @@ const camT = new THREE.Vector3();
 function updateCamera(dt, raw) {
   let tx, tz, ty = 0, zoom = 1, rate = 5;
   const step = st.mode === 'cine' ? cine.steps[cine.i] : null;
-  if (step?.cam) { [tx, tz, zoom] = step.cam; rate = 3.2; }
+  if (step?.cam) {
+    [tx, tz, zoom] = step.cam; rate = 3.2;
+    if (step.cam2) { const q = clamp(cine.t / step.dur, 0, 1); tx = lerp(tx, step.cam2[0], q); tz = lerp(tz, step.cam2[1], q); zoom = lerp(zoom, step.cam2[2], q); rate = 9; }
+  }
   else if (st.mode === 'title' || step) { tx = cam.x; tz = cam.z; }
   else if (st.mode === 'clear') { tx = world.hole.x + 3.6; tz = world.hole.z + 1.6; zoom = 1.6; rate = 3; }
   else {
@@ -972,34 +984,52 @@ function letterbox(cap, bar = 26) {
 }
 
 function drawTitle() {
-  const { W, H, g } = hud, cx = W / 2, t = st.clock, cy = Math.round(H * 0.3);
-  drawCity(g, W, H, t, 'night');
-  drawMoon(g, cx, cy, Math.round(H * 0.21));
-  const half = drawLogo(g, cx, cy, W, t);
-  hud.sysText('سراق الزيت', cx, cy + half + 18, 22, CREAM, ARABIC);
+  const { W, H, g } = hud, cx = W / 2, t = st.clock, T = t - st.titleT0, cy = Math.round(H * 0.3);
+  // la ciudad sube, la luna sale por detrás del Atlas y las letras caen una a una
+  const my = Math.round(lerp(H * 0.9, cy, ease(clamp((T - 0.5) / 2.1, 0, 1))));
+  drawCity(g, W, H, t, 'night', 0, { reveal: clamp(T / 2.4, 0, 1), behind: () => { drawMoon(g, cx, my, Math.round(H * 0.21)); drawClouds(g, W, H, t); } });
+  drawRoof(g, W, H, t, T > 4);
+  const half = drawLogo(g, cx, cy, W, t, T - 1.9);
+  if (T > 2.95 && T < 3.2) hud.rect(0, 0, W, H, `rgba(255,255,255,${(3.2 - T) * 2})`);
+  if (T > 3.1) hud.sysText('سراق الزيت', cx, cy + half + 18, 22, CREAM, ARABIC);
   const dy = cy + half + 34;
-  for (let i = -7; i <= 7; i++) hud.rect(cx + i * 9 - 1, dy + (i % 2 ? 1 : 0), 3, 3, i % 2 ? '#3fa7d6' : BORDER_C);
-  hud.text('la cucaracha que roba el aceite', cx, dy + 13, { color: '#ffd9a0' });
-  drawRoof(g, W, H, t);
-  if (Math.floor(t * 2) % 2) { hud.panel(cx - 44, H - 62, 88, 18); hud.text('PULSA ENTER', cx, H - 53, { color: CREAM, outline: null }); }
-  if (st.best.score) hud.text(`récord: ${st.best.score} puntos · noche ${st.best.night}`, cx, H - 36, { color: '#b9b6e6' });
+  if (T > 3.4) for (let i = -7; i <= 7; i++) if (Math.abs(i) < (T - 3.4) * 20) hud.rect(cx + i * 9 - 1, dy + (i % 2 ? 1 : 0), 3, 3, i % 2 ? '#3fa7d6' : BORDER_C);
+  if (T > 3.7) hud.text('la cucaracha que roba el aceite'.slice(0, Math.floor((T - 3.7) * 36)), cx, dy + 13, { color: '#ffd9a0' });
+  if (T > 4.8) {
+    if (Math.floor(t * 2) % 2) { hud.panel(cx - 44, H - 62, 88, 18); hud.text('PULSA ENTER', cx, H - 53, { color: CREAM, outline: null }); }
+    hud.text(st.best.score ? `récord: ${st.best.score} puntos · noche ${st.best.night}` : 'una noche en Marrakech', cx, H - 36, { color: '#b9b6e6' });
+  }
 }
 
-function drawCine() {
-  const { W, H, g } = hud, cx = W / 2, s = cine.steps[cine.i], t = st.clock - st.cineT, k = Math.min(1, cine.t / s.dur);
+const artC = document.createElement('canvas');
+function drawCineBody(s, k) {
+  const { W, H, g } = hud, cx = W / 2, t = st.clock - st.cineT;
   if (s.art === 'map') {
-    drawMap(hud, st.clock, s.map.from, s.map.to, k);
-    hud.text(s.title, cx, 13, { color: SOFT });
-    if (k > 0.25) hud.text(s.big, cx, 32, { scale: 2, color: GOLD });
-    const cap = s.cap.slice(0, Math.floor(Math.max(0, cine.t - 1.2) * 34));
-    if (cap) hud.wrap(cap, W - 30).forEach((l, i) => hud.text(l, cx, H - 18 + i * 10, { color: CREAM }));
+    drawTravel(hud, st.clock, cine.t, s.dur, s.map.from, s.map.to, s.info);
     hud.text('ENTER: saltar', W - 6, 8, { align: 'right', color: '#6a6f9a', outline: null });
     return;
   }
+  if (s.art === 'logo') { // el título cae con estruendo sobre negro
+    const a = cine.t - 0.3, cy = Math.round(H * 0.42);
+    hud.rect(0, 0, W, H, '#07061c');
+    const half = drawLogo(g, cx, cy + (a > 0.9 && a < 1.3 ? Math.round(rand(-2, 2)) : 0), W, st.clock, a);
+    if (a > 0.9 && a < 1.2) hud.rect(0, 0, W, H, `rgba(255,255,255,${(1.2 - a) * 2.5})`);
+    if (a > 1.5) hud.sysText('سراق الزيت', cx, cy + half + 18, 22, CREAM, ARABIC);
+    if (a > 1.9) hud.text('la cucaracha que roba el aceite'.slice(0, Math.floor((a - 1.9) * 36)), cx, cy + half + 40, { color: '#ffd9a0' });
+    return;
+  }
   if (s.art) {
-    drawCity(g, W, H, t, s.art, (s.scroll || 0) * k + (s.art === 'dawn' ? t * 1.5 : 0));
-    if (s.art === 'night') drawMoon(g, Math.round(W * 0.22), Math.round(H * 0.3), Math.round(H * 0.1));
-    drawRoof(g, W, H, t, s.art === 'night');
+    const scroll = (s.scroll0 || 0) + (s.scroll || 0) * k + (s.art === 'dawn' ? t * 1.5 : 0);
+    const paint = (c) => {
+      drawCity(c, W, H, t, s.art, scroll, { reveal: s.reveal ? clamp(cine.t / 2.6, 0, 1) : 1, behind: s.art === 'night' ? () => { drawMoon(c, Math.round(W * 0.22), Math.round(H * 0.3), Math.round(H * 0.1)); drawClouds(c, W, H, t); } : null });
+      drawRoof(c, W, H, t, s.art === 'night' && !s.zoom);
+    };
+    if (s.zoom) { // la cámara se mete por una ventana
+      if (artC.width !== W || artC.height !== H) { artC.width = W; artC.height = H; }
+      paint(artC.getContext('2d'));
+      const z = lerp(s.zoom[0], s.zoom[1], k * k), sw = W / z, sh = H / z, q = Math.min(1, k * 1.6);
+      g.drawImage(artC, clamp(lerp(W / 2, s.focus[0] * W, q) - sw / 2, 0, W - sw), clamp(lerp(H / 2, s.focus[1] * H, q) - sh / 2, 0, H - sh), sw, sh, 0, 0, W, H);
+    } else paint(g);
     if (s.big) { hud.text(s.big, cx + 3, H * 0.36 + 3, { scale: 6, color: '#5a1a3a', outline: null }); hud.text(s.big, cx, H * 0.36, { scale: 6, color: '#fff6d6', outline: null }); }
     letterbox(s.cap);
     return;
@@ -1010,6 +1040,14 @@ function drawCine() {
     const p = s.say.who === 'baby' ? proj(babies[0].x + 0.3, 1.6, world.hole.z) : proj(R.x, 2.2, R.z);
     hud.bubble([s.say.text.slice(0, Math.floor(cine.t * 34)) || ' '], p.x, p.y);
   }
+}
+
+function drawCine() {
+  const s = cine.steps[cine.i], { W, H } = hud, far = Math.hypot(W, H) / 2 + 6;
+  drawCineBody(s, Math.min(1, cine.t / s.dur));
+  if (s.iris === 'in' || s.iris === 'both') { const q = clamp(cine.t / 0.55, 0, 1); if (q < 1) hud.iris(W / 2, H / 2, far * ease(q)); }
+  if (s.iris === 'out' || s.iris === 'both') { const q = clamp((cine.t - (s.dur - 0.6)) / 0.55, 0, 1); if (q > 0) hud.iris(W / 2, H / 2, far * (1 - ease(q))); }
+  if (s.fade && cine.t < 0.35) hud.rect(0, 0, W, H, `rgba(7,6,24,${1 - cine.t / 0.35})`);
 }
 
 function drawHud() {
@@ -1053,17 +1091,18 @@ function drawHud() {
 
   if (st.paused) {
     hud.rect(0, 0, W, H, 'rgba(6,7,18,0.6)');
-    const w = 190, y = Math.round(H * 0.22); hud.panel(cx - w / 2, y, w, 108);
+    const w = 230, y = Math.round(H * 0.22); hud.panel(cx - w / 2, y, w, 108);
     hud.text('PAUSA', cx, y + 15, { scale: 2, color: GOLD });
     [['WASD / flechas', 'moverse'], ['SHIFT', 'correr (hace ruido)'], ['ESPACIO', 'mantener: volar y subirse'], ['E', 'soltar una gota'], ['M', 'silenciar'], ['P', 'seguir']].forEach(([a, b], i) => {
       hud.text(a, cx - 6, y + 34 + i * 11, { align: 'right', color: CREAM, outline: null }); hud.text(b, cx + 4, y + 34 + i * 11, { align: 'left', color: SOFT, outline: null });
     });
   }
+  if (st.irisIn > 0) hud.iris(cx, H / 2, (Math.hypot(W, H) / 2 + 6) * ease(1 - st.irisIn / 0.55));
 }
 
 // ---------- bucle ----------
 function update(raw) {
-  st.clock += raw; st.punchOil -= raw; st.punchScore -= raw;
+  st.clock += raw; st.punchOil -= raw; st.punchScore -= raw; st.irisIn -= raw;
   if (st.banner && (st.banner.t -= raw) <= 0) st.banner = null;
   // música: tema del sitio y capa según el peligro
   const chase = G.state === 'hunt' || K.state === 'alert' || K.state === 'pounce' || C.some((c) => c.on && (c.state === 'chase' || c.state === 'peck'));

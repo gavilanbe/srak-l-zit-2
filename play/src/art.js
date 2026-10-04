@@ -1,6 +1,7 @@
 // Ilustraciones 2D dibujadas por código a la resolución del juego: la medina de noche y al amanecer
 // (portada, apertura y final), el logotipo de aceite y el plano de la casa entre capítulos.
 import { GLYPHS } from './font.js';
+import { Hud } from './hud.js';
 
 function rng(seed) {
   return () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -88,9 +89,12 @@ function scene(W, H, key) {
 }
 
 // La medina. key: 'night' | 'dawn'. scroll desplaza las capas (paralaje).
-export function drawCity(g, W, H, t, key = 'night', scroll = 0) {
+// reveal 0..1 hace subir las capas desde abajo; behind() se dibuja entre el cielo y los edificios.
+export function drawCity(g, W, H, t, key = 'night', scroll = 0, { reveal = 1, behind = null } = {}) {
   const s = scene(W, H, key), P = s.P, off = (k) => -Math.round(20 + scroll * k + Math.sin(t * 0.12) * 4 * k);
+  const yo = (i) => (reveal >= 1 ? 0 : Math.round((1 - (1 - (1 - Math.max(0, Math.min(1, reveal * 1.5 - i * 0.12))) ** 3)) * (30 + i * 34)));
   g.drawImage(s.sky, 0, 0);
+  if (reveal < 0.5) { g.fillStyle = `rgba(7,6,28,${1 - reveal * 2})`; g.fillRect(0, 0, W, H); }
   if (P.star) {
     for (const st of s.stars) {
       const b = Math.sin(t * 1.7 + st.p * 3);
@@ -104,14 +108,35 @@ export function drawCity(g, W, H, t, key = 'night', scroll = 0) {
     const sx = Math.round(W * 0.3), sy = Math.round(s.hz - 26 - Math.min(18, t * 2.2)), R = 15;
     for (const [rr, c] of [[R + 9, 'rgba(255,233,176,0.25)'], [R + 4, 'rgba(255,233,176,0.45)'], [R, '#fff6d6']]) { g.fillStyle = c; for (let dy = -rr; dy <= rr; dy++) { const dx = Math.round(Math.sqrt(rr * rr - dy * dy)); g.fillRect(sx - dx, sy + dy, dx * 2, 1); } }
   }
-  g.drawImage(s.mount, off(0.25), 0); g.drawImage(s.far, off(0.5), 0); g.drawImage(s.mid, off(0.8), 0); g.drawImage(s.near, off(1.2), 0);
+  behind?.();
+  g.drawImage(s.mount, off(0.25), yo(0)); g.drawImage(s.far, off(0.5), yo(1)); g.drawImage(s.mid, off(0.8), yo(2)); g.drawImage(s.near, off(1.2), yo(3));
   for (const w of s.wins) {
     if (!P.star && w.layer < 2) continue;
     if (w.flick && Math.sin(t * 2.3 + w.p) > 0.8) continue;
     const x = w.x + off([0.5, 0.8, 1.2][w.layer]);
-    g.fillStyle = w.layer === 0 ? P.dim : P.lit; g.fillRect(x, w.y, 2, 3); if (w.arch) g.fillRect(x, w.y - 1, 2, 1);
+    const wy = w.y + yo(w.layer + 1);
+    g.fillStyle = w.layer === 0 ? P.dim : P.lit; g.fillRect(x, wy, 2, 3); if (w.arch) g.fillRect(x, wy - 1, 2, 1);
   }
-  for (const c of s.cloth) { g.fillStyle = c.c; g.fillRect(c.x + off(1.2), c.y + Math.round(Math.sin(t * 2 + c.x) * 0.6), 4, 6); }
+  for (const c of s.cloth) { g.fillStyle = c.c; g.fillRect(c.x + off(1.2), c.y + yo(3) + Math.round(Math.sin(t * 2 + c.x) * 0.6), 4, 6); }
+  if (P.star) { // guirnalda de farolillos entre dos azoteas
+    const x0 = Math.round(s.WW * 0.22) + off(1.2), y0 = s.hz + 16 + yo(3), n = 11;
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + i * 7, y = y0 + Math.round(Math.sin(i / n * Math.PI) * 6);
+      g.fillStyle = '#0f0826'; g.fillRect(x, y - 1, 7, 1);
+      if (i % 2 || Math.sin(t * 3 + i * 1.7) < -0.6) continue;
+      g.fillStyle = ['#ffb347', '#ff6b6b', '#7dd3fc', '#b6ff5c'][(i >> 1) % 4]; g.fillRect(x, y, 2, 3);
+      g.fillStyle = 'rgba(255,220,150,0.25)'; g.fillRect(x - 1, y - 1, 4, 5);
+    }
+  }
+}
+
+// Nubes finas que cruzan por delante de la luna.
+export function drawClouds(g, W, H, t) {
+  for (const [y, w, sp, ph] of [[0.2, 90, 5, 0], [0.34, 130, 3.2, 140], [0.44, 70, 6.5, 300], [0.12, 60, 4, 380]]) {
+    const x = Math.round(((t * sp + ph) % (W + w * 2)) - w), yy = Math.round(H * y);
+    g.fillStyle = 'rgba(150,130,210,0.2)'; g.fillRect(x, yy, w, 2); g.fillRect(x + (w * 0.15 | 0), yy - 2, w * 0.6 | 0, 2); g.fillRect(x + (w * 0.3 | 0), yy + 2, w * 0.55 | 0, 2);
+    g.fillStyle = 'rgba(190,175,235,0.14)'; g.fillRect(x + (w * 0.2 | 0), yy - 1, w * 0.4 | 0, 1);
+  }
 }
 
 // La luna grande de la portada.
@@ -169,10 +194,12 @@ const logos = {};
 function buildLogo(text, passes) {
   const m = 2 ** passes, top = m, bot = 8 * m - 1, pad = 3;
   let grid = Array.from({ length: 9 }, () => [0]);
+  const cols = [];
   for (const ch of text) {
     if (ch === ' ') { grid.forEach((r) => r.push(0, 0)); continue; }
-    const gl = GLYPHS[ch];
+    const gl = GLYPHS[ch], c0 = grid[0].length;
     for (let y = 0; y < 9; y++) { for (let x = 0; x < gl.w; x++) grid[y].push(y >= 1 && y <= 7 && gl.rows[y - 1][x] === 'X' ? 1 : 0); grid[y].push(0); }
+    cols.push([c0, grid[0].length - 1]);
   }
   for (let i = 0; i < passes; i++) grid = epx(grid);
   const h = grid.length, w = grid[0].length;
@@ -192,12 +219,16 @@ function buildLogo(text, passes) {
   }
   const drips = [], stepX = Math.round(2.25 * m); // columnas del borde inferior de las letras, de donde gotea el aceite
   for (let x = m; x < w; x += stepX) { for (let dx = 0; dx < stepX && x + dx < w; dx++) if (on(x + dx, bot) && on(x + dx + 1, bot)) { drips.push(x + dx + pad); break; } }
-  return { c, w: c.width, h: c.height, drips, base: bot + 1 + pad, half: 3.5 * m, tmp: canvas(c.width, c.height) };
+  // por dónde cortar el lienzo para mover cada letra por separado
+  const cuts = cols.map(([a], i) => (i ? Math.round((cols[i - 1][1] + a) / 2 * m) + pad : 0)); cuts.push(c.width);
+  return { c, w: c.width, h: c.height, drips, cuts, base: bot + 1 + pad, half: 3.5 * m, tmp: canvas(c.width, c.height) };
 }
 
 // Logotipo «SRAK L ZIT» centrado en (cx, cy), con brillo que lo recorre y gotas de aceite.
+// appear: segundos desde que empieza a caer (las letras entran una a una rebotando).
 // Devuelve la mitad del alto de las letras en pantalla.
-export function drawLogo(g, cx, cy, W, t) {
+const bounce = (k) => { const n = 7.5625, d = 2.75; return k < 1 / d ? n * k * k : k < 2 / d ? n * (k -= 1.5 / d) * k + 0.75 : k < 2.5 / d ? n * (k -= 2.25 / d) * k + 0.9375 : n * (k -= 2.625 / d) * k + 0.984375; };
+export function drawLogo(g, cx, cy, W, t, appear = 99) {
   logos.a ??= buildLogo('SRAK L ZIT', 2); logos.b ??= buildLogo('SRAK L ZIT', 1);
   const [logo, s] = logos.a.w * 2 <= W - 4 ? [logos.a, 2] : logos.b.w * 3 <= W - 4 ? [logos.b, 3] : logos.b.w * 2 <= W - 4 ? [logos.b, 2] : [logos.b, 1];
   const tg = logo.tmp.getContext('2d');
@@ -205,7 +236,15 @@ export function drawLogo(g, cx, cy, W, t) {
   tg.globalCompositeOperation = 'source-atop'; tg.fillStyle = 'rgba(255,255,255,0.75)';
   const sweep = ((t % 4.5) / 1.1) * (logo.w + 60) - 30;
   for (let yy = 0; yy < logo.h; yy++) tg.fillRect(Math.round(sweep - yy * 0.7), yy, Math.max(3, logo.h / 6 | 0), 1);
-  const x0 = Math.round(cx - logo.w * s / 2), y = Math.round(cy - logo.h * s / 2);
+  const x0 = Math.round(cx - logo.w * s / 2), y = Math.round(cy - logo.h * s / 2), n = logo.cuts.length - 1;
+  if (appear < n * 0.09 + 0.6) { // todavía cayendo
+    for (let i = 0; i < n; i++) {
+      const lt = appear - i * 0.09; if (lt < 0) continue;
+      const a = logo.cuts[i], w = logo.cuts[i + 1] - a, dy = Math.round((1 - bounce(Math.min(1, lt / 0.55))) * (y + logo.h * s + 10));
+      g.drawImage(logo.c, a, 0, w, logo.h, x0 + a * s, y - dy, w * s, logo.h * s);
+    }
+    return logo.half * s;
+  }
   g.drawImage(logo.tmp, x0, y, logo.w * s, logo.h * s);
   logo.drips.forEach((dx, i) => {
     const ph = (t * 0.32 + i * 0.37) % 1, x = x0 + dx * s, by = y + logo.base * s, d = Math.max(2, s);
@@ -244,29 +283,93 @@ function roomArt(hud, i, x, y, w, h, t) {
   }
 }
 
-// from/to: índices de habitación (from puede ser null); k: avance 0..1 del recorrido.
-export function drawMap(hud, t, from, to, k) {
-  const { W, H, g } = hud, cx = W / 2;
-  drawCity(g, W, H, t, 'night', 30); hud.rect(0, 0, W, H, 'rgba(7,6,24,0.72)');
-  const rw = Math.min(126, (W - 40) / 2 | 0), rh = 56, wall = 4, x0 = Math.round(cx - rw - wall * 1.5), y0 = Math.round(H / 2 - rh - wall * 1.5) + 6;
-  const hw = rw * 2 + wall * 3, hh = rh * 2 + wall * 3;
-  hud.rect(x0 - 2, y0 - 2, hw + 4, hh + 4, '#0b0b12'); hud.rect(x0, y0, hw, hh, '#3a2414');
-  for (let x = x0 - 2; x < x0 + hw + 2; x += 8) hud.rect(x, y0 - 6, 5, 4, '#3a2414'); // almenas
+const STORY = [
+  'Todo empieza en la cocina de la jadda.',
+  'En la cocina ya no queda ni gota. Por la grieta, al salón.',
+  'Jeddi se ha quedado sin argán. Tubería abajo, al patio.',
+  'Queda el premio gordo: la tienda de Si Brahim, a pie de calle.',
+];
+const THREATS = ['la jadda · Mchicha', 'jeddi · Mchicha', 'las gallinas · la jadda', 'Si Brahim · los cepos'];
+
+function sprite(hud, x, y, robe, head, top) { // personajillo de 6x12
+  hud.rect(x, y + 5, 6, 8, robe); hud.rect(x + 1, y + 1, 4, 4, head); hud.rect(x + 1, y, 4, 2, top);
+}
+
+// La casa en corte, dibujada en un lienzo aparte para poder acercar la cámara a una habitación.
+let mapHud = null;
+function drawHouse(hud, t, from, to, k) {
+  const { W, H } = hud, cx = W / 2;
+  hud.clear();
+  const rw = Math.min(126, (W - 40) / 2 | 0), rh = 56, wall = 5, x0 = Math.round(cx - rw - wall * 1.5), y0 = Math.round(H / 2 - rh - wall * 1.5) + 4;
+  const hw = rw * 2 + wall * 3, hh = rh * 2 + wall * 3, gy = y0 + hh;
+  // calle, palmera y farola
+  hud.rect(0, gy, W, H - gy, '#0d0a1e'); hud.rect(0, gy, W, 2, '#2a1f45');
+  const px = x0 - 26; for (let y = gy - 46; y < gy; y++) hud.rect(px + Math.round(Math.sin((y - gy) * 0.05) * 2), y, 2, 1, '#1c1040');
+  for (let a = 0; a < 7; a++) { const ang = -2.9 + a * 0.45; for (let d = 0; d < 13; d++) hud.rect(px + Math.cos(ang) * d, gy - 46 + Math.sin(ang) * d * 0.6 + d * d * 0.03, 2, 1, '#1c1040'); }
+  const lx = x0 + hw + 16; hud.rect(lx, gy - 34, 2, 34, '#1c1040'); hud.rect(lx - 3, gy - 38, 8, 5, '#1c1040'); hud.rect(lx - 2, gy - 37, 6, 3, Math.sin(t * 9) > -0.8 ? '#ffd27a' : '#b9793f');
+  hud.rect(lx - 9, gy - 30, 20, 30, 'rgba(255,210,122,0.06)');
+  // fachada, azotea y tejadillo del hanout
+  hud.rect(x0 - 3, y0 - 3, hw + 6, hh + 3, '#0b0b12'); hud.rect(x0, y0, hw, hh, '#4a2f1c');
+  for (let x = x0 - 3; x < x0 + hw + 3; x += 8) hud.rect(x, y0 - 8, 5, 5, '#4a2f1c');
+  hud.rect(x0 + 14, y0 - 20, 1, 12, '#2a1a10'); hud.rect(x0 + 11, y0 - 18, 7, 1, '#2a1a10'); // antena
+  hud.rect(x0 + hw - 40, y0 - 18, 1, 10, '#2a1a10'); hud.rect(x0 + hw - 12, y0 - 18, 1, 10, '#2a1a10');
+  for (let d = 0; d <= 28; d++) hud.rect(x0 + hw - 40 + d, y0 - 18 + Math.sin(d / 28 * Math.PI) * 3, 1, 1, '#2a1a10');
+  for (const [d, c] of [[5, '#8f1d2c'], [12, '#1d6f73'], [19, '#e9c46a']]) hud.rect(x0 + hw - 40 + d, y0 - 16 + Math.sin(t * 2 + d) * 0.6, 4, 6, c);
   const pos = (i) => ({ x: x0 + wall + (i % 2) * (rw + wall), y: y0 + wall + (i >> 1) * (rh + wall) });
   const ctr = (i) => { const p = pos(i); return { x: p.x + rw / 2, y: p.y + rh - 16 }; };
+  const looped = from !== null && from > to;
   ROOMS.forEach((room, i) => {
-    const p = pos(i);
+    const p = pos(i), seen = i <= to || looped;
     roomArt(hud, i, p.x, p.y, rw, rh, t);
-    if (i > to && !(from !== null && from > to)) { hud.rect(p.x, p.y, rw, rh, 'rgba(8,6,20,0.9)'); hud.text('?', p.x + rw / 2, p.y + rh / 2, { scale: 2, color: '#6a6f9a' }); }
+    const fy = p.y + rh - 10, walk = Math.round(Math.sin(t * 0.9 + i) * 14);
+    if (i === 0) sprite(hud, p.x + 62 + walk, fy - 13, '#7d3c98', '#c68a5b', '#d62828');
+    if (i === 3) sprite(hud, p.x + 34 + walk, fy - 13, '#2b5fa8', '#c68a5b', '#f4f1ea');
+    if (i !== to) hud.rect(p.x, p.y, rw, rh, seen ? 'rgba(8,6,20,0.45)' : 'rgba(8,6,20,0.9)');
+    if (!seen) hud.text('?', p.x + rw / 2, p.y + rh / 2, { scale: 2, color: '#6a6f9a' });
     else hud.text(room.name, p.x + 4, p.y + 7, { align: 'left', color: i === to ? '#ffd23f' : '#fdf6e3' });
-    if (i === to && k > 0.85 && Math.floor(t * 5) % 2) { hud.rect(p.x, p.y, rw, 2, '#ffd23f'); hud.rect(p.x, p.y + rh - 2, rw, 2, '#ffd23f'); hud.rect(p.x, p.y, 2, rh, '#ffd23f'); hud.rect(p.x + rw - 2, p.y, 2, rh, '#ffd23f'); }
+    if (seen && i < to && !looped) { hud.rect(p.x + rw - 46, p.y + 3, 43, 11, '#0b0b12'); hud.rect(p.x + rw - 45, p.y + 4, 41, 9, '#ffd23f'); hud.text('ROBADO', p.x + rw - 24, p.y + 9, { color: '#5a0a10', outline: null }); }
   });
-  // recorrido de la cucaracha por dentro de las paredes
-  const b = ctr(to), a = from === null ? { x: x0 - 26, y: b.y } : ctr(from), mid = { x: x0 + hw / 2, y: y0 + hh / 2 };
-  const pts = from === null || (from >> 1) === (to >> 1) ? [a, b] : [a, { x: mid.x, y: a.y }, { x: mid.x, y: b.y }, b];
+  // tuberías por dentro de los muros
+  const mid = { x: x0 + hw / 2, y: y0 + hh / 2 };
+  hud.rect(mid.x - 1, y0 + 2, 2, hh - 4, '#7a7f87'); hud.rect(x0 + 2, mid.y - 1, hw - 4, 2, '#7a7f87');
+  for (const [jx, jy] of [[mid.x, mid.y], [mid.x, y0 + 18], [mid.x, y0 + hh - 18], [x0 + 40, mid.y], [x0 + hw - 40, mid.y]]) hud.rect(jx - 2, jy - 2, 4, 4, '#b8bcc4');
+  // recorrido de la cucaracha
+  const b = ctr(to), a = from === null ? { x: x0 - 30, y: b.y } : ctr(from);
+  const pts = from === null ? [a, b] : (from >> 1) === (to >> 1) ? [a, { x: mid.x, y: a.y }, b]
+    : (from % 2) === (to % 2) ? [a, { x: a.x, y: mid.y }, b] : [a, { x: mid.x, y: a.y }, { x: mid.x, y: b.y }, b];
   const segs = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y)), total = segs.reduce((s, v) => s + v, 0);
   const at = (d) => { for (let i = 0; i < segs.length; i++) { if (d <= segs[i] || i === segs.length - 1) { const q = Math.min(1, d / segs[i]); return { x: pts[i].x + (pts[i + 1].x - pts[i].x) * q, y: pts[i].y + (pts[i + 1].y - pts[i].y) * q }; } d -= segs[i]; } };
-  const done = Math.min(1, k / 0.8) * total;
+  const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2, done = e * total;
   for (let d = 0; d < done; d += 6) { const p = at(d); hud.rect(p.x - 1, p.y - 1, 3, 3, '#0b0b12'); hud.rect(p.x, p.y, 1, 1, '#ffd23f'); }
-  const p = at(done); hud.roach(p.x - 5, p.y - 4 - Math.abs(Math.sin(t * 12)) * (k < 0.8 ? 2 : 0));
+  const p = at(done), moving = k > 0 && k < 1;
+  if (moving && Math.floor(t * 12) % 2) hud.rect(p.x - 7 + Math.random() * 3, p.y + 2, 2, 2, '#d8cfb8');
+  hud.roach(p.x - 5, p.y - 4 - (moving ? Math.abs(Math.sin(t * 14)) * 2 : 0));
+  return ctr(to);
+}
+
+// Escena de cambio de sitio. ct: segundos dentro de la escena; info: { chapter, name, sub, loop }.
+export function drawTravel(hud, t, ct, dur, from, to, info) {
+  const { W, H, g } = hud, cx = W / 2;
+  if (!mapHud || mapHud.W !== W || mapHud.H !== H) { mapHud = new Hud(canvas(W, H)); mapHud.resize(W, H, 1); }
+  drawCity(g, W, H, t, 'night', 30); hud.rect(0, 0, W, H, 'rgba(7,6,24,0.7)');
+  const k = Math.max(0, Math.min(1, (ct - 0.9) / 2.7)), room = drawHouse(mapHud, t, from, to, k);
+  const zt = Math.max(0, Math.min(1, (ct - 3.9) / 1.1)), ez = 1 - (1 - zt) ** 3, z = 1 + ez * 1.25;
+  const rise = Math.round((1 - (1 - (1 - Math.min(1, ct / 0.7)) ** 3)) * H);
+  const fx = cx + (room.x - cx) * ez, fy = H / 2 + (room.y - 12 - H / 2) * ez, sw = W / z, sh = H / z;
+  g.drawImage(mapHud.c, fx - sw / 2, fy - sh / 2, sw, sh, 0, rise, W, H);
+  // rótulos
+  if (ct < 3.9) {
+    hud.text(`CAPÍTULO ${info.chapter}${info.loop ? ' · OTRA VUELTA' : ''}`, cx, 13, { color: '#b9c8ff' });
+    const story = (info.loop ? 'El invierno es largo. Otra vuelta por la casa, y todos más despiertos.' : STORY[to]).slice(0, Math.floor(Math.max(0, ct - 0.5) * 30));
+    if (story) hud.wrap(story, W - 30).forEach((l, i) => hud.text(l, cx, H - 18 + i * 10, { color: '#fdf6e3' }));
+  } else {
+    const st = ct - 3.9, sc = (W > 330 ? 3 : 2) + (st < 0.12 ? 1 : 0), ty = Math.round(H * 0.17);
+    hud.rect(0, ty - 20, W, 40, 'rgba(7,6,24,0.78)'); hud.rect(0, ty - 20, W, 1, '#e9c46a'); hud.rect(0, ty + 19, W, 1, '#e9c46a');
+    hud.text(`CAPÍTULO ${info.chapter}`, cx, ty - 12, { color: '#b9c8ff', outline: null });
+    hud.text(info.name, cx + 2, ty + 6, { scale: sc, color: '#5a0a10', outline: null }); hud.text(info.name, cx, ty + 4, { scale: sc, color: '#ffd23f', outline: null });
+    hud.rect(0, H - 40, W, 40, 'rgba(7,6,24,0.78)'); hud.rect(0, H - 40, W, 1, '#e9c46a');
+    const sub = info.sub.slice(0, Math.floor(Math.max(0, st - 0.3) * 32));
+    if (sub) hud.text(sub, cx, H - 28, { color: '#fdf6e3', outline: null });
+    if (st > 1.2) hud.text(`CUIDADO CON: ${THREATS[to]}`, cx, H - 13, { color: '#ff7a7a', outline: null });
+  }
 }

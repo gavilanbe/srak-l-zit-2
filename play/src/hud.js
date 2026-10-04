@@ -168,6 +168,17 @@ export class Hud {
     }
   }
 
+  // cortinilla de iris: todo negro menos un círculo de radio r
+  iris(cx, cy, r) {
+    const { W, H, g } = this; g.fillStyle = INK; cx = Math.round(cx);
+    for (let y = 0; y < H; y++) {
+      const dy = y - cy;
+      if (Math.abs(dy) >= r) { g.fillRect(0, y, W, 1); continue; }
+      const dx = Math.round(Math.sqrt(r * r - dy * dy));
+      g.fillRect(0, y, Math.max(0, cx - dx), 1); g.fillRect(cx + dx, y, Math.max(0, W - cx - dx), 1);
+    }
+  }
+
   moon(x, y) { this.rect(x - 1, y - 1, 7, 7, INK); this.rect(x, y, 5, 5, '#e6ecff'); this.rect(x + 2, y, 3, 3, INK); }
   sun(x, y, t) {
     const c = Math.floor(t * 3) % 2 ? '#ffd23f' : '#ffb347';
