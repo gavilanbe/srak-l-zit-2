@@ -37,8 +37,8 @@ void main() {
   float d = length((vUv - 0.5) * vec2(1.15, 1.0));
   float v = floor(clamp((d - 0.42) * 2.6, 0.0, 1.0) * 4.0 + bd) / 4.0;
   col *= 1.0 - v * 0.4;
-  float dv = floor(clamp((d - 0.28) * 2.3, 0.0, 1.0) * 4.0 + bd) / 4.0;
-  col = mix(col, col * vec3(1.25, 0.45, 0.4) + vec3(0.14, 0.0, 0.0), dv * danger);
+  float dv = floor(clamp((d - 0.4) * 2.4, 0.0, 1.0) * 4.0 + bd) / 4.0;
+  col = mix(col, col * vec3(1.25, 0.45, 0.4) + vec3(0.12, 0.0, 0.0), dv * danger * 0.8);
   col = mix(col, vec3(1.0), flash);
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
