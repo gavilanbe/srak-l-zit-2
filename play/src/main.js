@@ -24,11 +24,11 @@ const LV = buildLevels(scene);
 let world = LV.levels[0];
 
 const CARRY_MAX = 3, VISION = 10.5, VISION_HALF = 0.6, ROACH_R = 0.55, GRANNY_R = 1.35;
-const DASH_T = 0.26, DASH_CD = 1.4, DASH_SPEED = 17;
+const FLY_TIME = 1.5, FLY_REGEN = 1.1; // segundos de aleteo y lo que tarda en recuperarse posada
 
 // La campaña: dos noches por sitio. Después del hanout, la casa se repite más difícil.
 const PLAN = [
-  { lv: 0, quota: 6, news: 'ESPACIO: vuelo corto · E: suelta zit y que resbale' },
+  { lv: 0, quota: 6, news: 'Mantén ESPACIO para volar: en lo alto hay zit rápido' },
   { lv: 0, quota: 8, cat: true, glue: 2, bottle: true, news: 'Nuevo: Mchicha, el gato. A oscuras, no hagas ruido' },
   { lv: 1, quota: 6, glue: 2, news: 'Jeddi oye todo. Corre o vuela cerca de él y se despierta' },
   { lv: 1, quota: 8, cat: true, glue: 3, news: 'Mchicha se ha colado en el salón' },
@@ -101,7 +101,7 @@ for (let i = 0; i < 5; i++) {
 }
 
 // ---------- estado ----------
-const R = { x: 0, z: 0, vx: 0, vz: 0, head: 0, carry: 0, fill: 0, hidden: false, lowHidden: false, alive: true, respawn: 0, inv: 0, poison: 0, walk: 0, glued: false, sprint: false, moving: false, dashT: 0, dashCd: 0, dvx: 0, dvz: 0, air: 0, wing: 0, turn: 0, squash: 0, noise: 1.6, ringT: 0, dripT: 0, deliverT: 0, delivered: 0, dustT: 0, scared: 0, cause: '' };
+const R = { x: 0, z: 0, vx: 0, vz: 0, head: 0, carry: 0, fill: 0, hidden: false, lowHidden: false, alive: true, respawn: 0, inv: 0, poison: 0, walk: 0, glued: false, sprint: false, moving: false, y: 0, vy: 0, sup: 0, stam: 1, flying: false, flapT: 0, air: 0, wing: 0, turn: 0, squash: 0, noise: 1.6, ringT: 0, dripT: 0, deliverT: 0, delivered: 0, dustT: 0, scared: 0, cause: '' };
 const G = { kind: 'jadda', state: 'away', t: 0, x: 0, z: 0, face: 0, baseFace: 0, node: 0, prev: -1, route: [], linger: 0, visit: 0, leaving: false, lost: 0, throwCd: 0, sprayCd: 0, hear: 0, say: '', sayT: 0, walk: 0, arm: -2.6, reroute: 0, lastX: 0, lastZ: 0 };
 const K = { on: false, state: 'sleep', t: 0, x: 0, z: 0, face: 0, tx: 0, tz: 0, vx: 0, vz: 0, walk: 0, dur: 1, dodged: false };
 const S = { st: 'idle', t: 0, dur: 1, from: new THREE.Vector3(), to: new THREE.Vector3(), harmless: false };
@@ -167,6 +167,7 @@ function setupNight(n) {
   looseDrops.forEach((d, i) => { d.on = i < count; d.m.visible = d.on; if (d.on) { [d.x, d.z] = spots[i]; d.m.position.set(d.x, 0.22, d.z); } });
   const ps = shuffle(world.plateSpots), plates = p.tier < 4 ? 2 : 3;
   world.plates.forEach((pl, i) => { pl.on = i < plates; pl.mesh.visible = pl.on; pl.amount = 3; pl.oil.visible = true; pl.oil.scale.set(1, 1, 1); if (pl.on) { [pl.x, pl.z] = ps[i]; pl.mesh.position.set(pl.x, 0, pl.z); } });
+  for (const h of world.high || []) { h.amount = 4; h.tasted = false; h.mesh.visible = true; }
   K.on = !!p.cat; catMesh.visible = K.on;
   if (K.on) { const [cx, cz] = pick(world.catSpots.slice(0, 3)); Object.assign(K, { state: 'sleep', t: rand(4, 7), x: cx, z: cz, face: rand(-3, 3) }); }
   C.forEach((c, i) => { c.on = i < (p.chicks || 0); c.mesh.visible = c.on; if (c.on) { [c.x, c.z] = world.chickSpots[i]; Object.assign(c, { state: 'wander', t: rand(1, 3), tx: c.x, tz: c.z, face: rand(-3, 3) }); } });
@@ -192,7 +193,7 @@ function goNight(n) {
 }
 
 function resetRoach() {
-  Object.assign(R, { x: world.hole.x + 0.8, z: world.hole.z, vx: 0, vz: 0, head: 0, carry: 0, fill: 0, alive: true, respawn: 0, inv: 2, poison: 0, glued: false, dashT: 0, dashCd: 0, air: 0, wing: 0, squash: 0, deliverT: 0, delivered: 0 });
+  Object.assign(R, { x: world.hole.x + 0.8, z: world.hole.z, vx: 0, vz: 0, head: 0, carry: 0, fill: 0, alive: true, respawn: 0, inv: 2, poison: 0, glued: false, y: 0, vy: 0, sup: 0, stam: 1, flying: false, air: 0, wing: 0, squash: 0, deliverT: 0, delivered: 0 });
   roachMesh.visible = true; soul.visible = false;
 }
 
@@ -208,12 +209,12 @@ const DEATHS = {
 
 function killRoach(cause) {
   if (!R.alive || R.inv > 0) return;
-  Object.assign(R, { alive: false, respawn: 2.1, carry: 0, vx: 0, vz: 0, dashT: 0, air: 0, wing: 0, cause });
+  Object.assign(R, { alive: false, respawn: 2.1, carry: 0, vx: 0, vz: 0, vy: 0, flying: false, air: 0, wing: 0, cause });
   st.lives--; st.detect = 0; st.combo = 1; st.shake = 0.5; st.flash = 0.5; hitstop(0.14); sfx.squash();
   burst(R.x, 0.3, R.z, '#a8521c', 14, 6, 5); burst(R.x, 0.3, R.z, '#ffd23f', 8, 4, 6);
   ring(R.x, R.z, 3, '#ffffff', 0.4, 0.6);
   roachMesh.userData.body.scale.set(1.3, 0.14, 1.3); roachMesh.userData.body.position.y = 0;
-  soul.visible = true; soul.position.set(R.x, 0.6, R.z);
+  soul.visible = true; soul.position.set(R.x, R.y + 0.6, R.z);
   say(DEATHS[cause][0], 2);
   if (G.state === 'hunt') { G.state = 'gloat'; G.t = 2; gsay('¡Hamdullah!', 2); }
 }
@@ -229,15 +230,25 @@ function clearNight() {
   st.score += time + stealth + lives;
   st.mode = 'clear'; st.modeT = 0; sfx.win();
   grannyMesh.visible = false; setLight(!!world.alwaysLit); S.st = 'idle'; slipMesh.visible = false; marker.visible = false; cloud.visible = false; P.st = 'idle';
-  R.x = world.hole.x + 1.6; R.z = world.hole.z; R.vx = R.vz = 0;
+  Object.assign(R, { x: world.hole.x + 1.6, z: world.hole.z, vx: 0, vz: 0, y: 0, vy: 0 });
 }
 
 function nextNight() { if (st.night % PLAN.length === 0) playEnding(st.night); else goNight(st.night + 1); }
 
 // ---------- cucaracha ----------
-function collide(p, r) {
+const inside = (c, x, z) => (c.r !== undefined ? dist(x, z, c.x, c.z) < c.r : x > c.x0 && x < c.x1 && z > c.z0 && z < c.z1);
+
+// Altura de la superficie más alta sobre la que se puede estar en (x, z) viniendo desde la altura y.
+function supportAt(x, z, y) {
+  let s = 0;
+  for (const c of world.colliders) if (!c.off && c.h < 50 && c.h > s && y >= c.h - 0.35 && inside(c, x, z)) s = c.h;
+  for (const c of world.covers) if (c.topY > s && y >= c.topY - 0.35 && inside(c, x, z)) s = c.topY;
+  return s;
+}
+
+function collide(p, r, y = 0) {
   for (const c of world.colliders) {
-    if (c.off) continue;
+    if (c.off || y >= c.h - 0.35 || y + 0.5 < c.y0) continue; // por encima o por debajo de la pieza
     if (c.r !== undefined) {
       const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), m = r + c.r;
       if (d < m && d > 1e-5) { p.x = c.x + dx / d * m; p.z = c.z + dz / d * m; }
@@ -257,6 +268,7 @@ function collide(p, r) {
 function oilSources() {
   const list = world.oil.filter((o) => !o.bottle || st.plan.bottle);
   for (const p of world.plates) if (p.on && p.amount > 0) list.push(p);
+  for (const h of world.high || []) if (h.amount > 0) list.push(h);
   return list;
 }
 
@@ -280,33 +292,43 @@ function updateRoach(dt) {
   R.sprint = R.moving && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
 
   const wasGlued = R.glued;
-  R.glued = R.air < 0.2 && world.glue.some((g) => g.on && dist(R.x, R.z, g.x, g.z) < g.r);
-  if (R.glued && !wasGlued) { sfx.glue(); say('¡Pegamento! Sal de ahí con un vuelo', 1.8); }
+  R.glued = R.y < 0.15 && world.glue.some((g) => g.on && dist(R.x, R.z, g.x, g.z) < g.r);
+  if (R.glued && !wasGlued) { sfx.glue(); say('¡Pegamento! Sal de ahí volando', 1.8); }
   for (const s of world.snaps) {
-    if (!s.on || s.shut || R.air > 0.2 || dist(R.x, R.z, s.x, s.z) > 0.85) continue;
+    if (!s.on || s.shut || R.y > 0.15 || dist(R.x, R.z, s.x, s.z) > 0.85) continue;
     s.shut = true; s.bar.position.x = -0.3; sfx.slap(); burst(s.x, 0.3, s.z, '#d7dbe2', 6, 4, 3); killRoach('trap');
   }
 
-  // vuelo corto
-  R.dashCd = Math.max(0, R.dashCd - dt);
-  if (pressed.has('Space') && R.dashCd <= 0 && R.dashT <= 0) {
-    const a = R.moving ? Math.atan2(dz, dx) : R.head;
-    R.dashT = DASH_T; R.dashCd = DASH_CD; R.dvx = Math.cos(a) * DASH_SPEED; R.dvz = Math.sin(a) * DASH_SPEED; R.head = a;
-    sfx.dash(); burst(R.x, 0.15, R.z, '#e6dcc4', 7, 3, 2, 0.4); ring(R.x, R.z, 8, '#ffffff', 0.45, 0.3); st.kick = 0.04;
+  // vuelo: un toque es un saltito; mantener ESPACIO aletea y gana altura mientras quede aguante
+  const grounded = R.y <= R.sup + 0.02 && R.vy <= 0;
+  if (pressed.has('Space') && R.stam > 0.1) {
+    R.vy = Math.max(R.vy, 6); R.stam = Math.max(0, R.stam - 0.1); sfx.dash(); st.kick = Math.max(st.kick, 0.03);
+    if (grounded) { burst(R.x, R.y + 0.15, R.z, '#e6dcc4', 7, 3, 2, 0.4); ring(R.x, R.z, 8, '#ffffff', 0.45, 0.3); }
   }
-  if (R.dashT > 0) {
-    R.dashT -= dt; R.vx = R.dvx; R.vz = R.dvz;
-    R.air = Math.sin(clamp(1 - R.dashT / DASH_T, 0, 1) * Math.PI); R.wing = 1;
-    if (R.dashT <= 0) { R.air = 0; R.squash = 1; R.vx *= 0.35; R.vz *= 0.35; burst(R.x, 0.12, R.z, '#e6dcc4', 6, 2.5, 1.5, 0.35); }
-  } else {
-    R.wing = Math.max(0, R.wing - dt * 8);
-    const speed = 6.4 * (R.sprint ? 1.55 : 1) * (1 - 0.1 * R.carry) * (R.glued ? 0.28 : 1);
-    const tx = R.moving ? dx * speed : 0, tz = R.moving ? dz * speed : 0, k = Math.min(1, dt * 14);
+  R.flying = keys.has('Space') && R.stam > 0 && !grounded;
+  if (R.flying) {
+    R.vy = Math.min(6.5, R.vy + 34 * dt); R.stam = Math.max(0, R.stam - dt / FLY_TIME);
+    R.flapT -= dt; if (R.flapT <= 0) { R.flapT = 0.11; sfx.flap(); }
+  } else if (grounded) R.stam = Math.min(1, R.stam + dt / FLY_REGEN);
+  const airborne = !grounded;
+  R.wing = airborne ? 1 : Math.max(0, R.wing - dt * 8);
+  {
+    const speed = (airborne ? 8.2 : 6.4 * (R.sprint ? 1.55 : 1)) * (1 - 0.1 * R.carry) * (R.glued ? 0.28 : 1);
+    const tx = R.moving ? dx * speed : 0, tz = R.moving ? dz * speed : 0, k = Math.min(1, dt * (airborne ? 7 : 14));
     R.vx += (tx - R.vx) * k; R.vz += (tz - R.vz) * k;
   }
   R.x += R.vx * dt; R.z += R.vz * dt;
-  collide(R, ROACH_R);
-  if (grannyMesh.visible && G.state !== 'slip' && G.kind !== 'sleeper') { // no se puede atravesar a quien patrulla
+  collide(R, ROACH_R, R.y);
+  // altura: gravedad, techo bajo los muebles y aterrizaje en lo que haya debajo
+  R.vy = Math.max(-12, R.vy - 17 * dt); R.y = Math.min(7.6, R.y + R.vy * dt);
+  for (const c of world.covers) if (inside(c, R.x, R.z) && R.y < c.topY - 0.35 && R.y > c.h - 0.6) { R.y = c.h - 0.6; R.vy = Math.min(0, R.vy); }
+  R.sup = supportAt(R.x, R.z, R.y);
+  if (R.y <= R.sup) {
+    if (R.vy < -4) { R.squash = 1; burst(R.x, R.sup + 0.12, R.z, '#e6dcc4', 6, 2.5, 1.5, 0.35); if (R.sup > 1) floater(pick(['¡hop!', '¡arriba!']), R.x, R.z, '#9be7a0', 1, R.sup + 1.2); }
+    R.y = R.sup; R.vy = 0;
+  }
+  R.air = clamp((R.y - R.sup) / 0.6, 0, 1);
+  if (grannyMesh.visible && G.state !== 'slip' && G.kind !== 'sleeper' && R.y < 4.5) { // no se puede atravesar a quien patrulla
     const d = dist(R.x, R.z, G.x, G.z), m = ROACH_R + GRANNY_R;
     if (d < m && d > 1e-4) { R.x = G.x + (R.x - G.x) / d * m; R.z = G.z + (R.z - G.z) / d * m; }
   }
@@ -318,43 +340,45 @@ function updateRoach(dt) {
   R.inv = Math.max(0, R.inv - dt);
 
   // ruido: lo oyen el gato, jeddi y quien patrulle
-  const dashing = R.dashT > 0;
-  R.noise = dashing ? 8 : R.sprint ? 7.5 : R.moving ? 3.6 : 1.6;
+  const dashing = R.flying;
+  R.noise = dashing ? 8 : R.sprint && !airborne ? 7.5 : R.moving ? 3.6 : 1.6;
   R.ringT -= dt; R.dustT -= dt;
   const listener = (K.on && !st.lightOn) || G.state === 'doze';
-  if (R.moving && R.ringT <= 0 && (R.sprint ? (grannyMesh.visible || listener) : listener)) {
-    ring(R.x, R.z, R.noise, R.sprint ? '#ffffff' : '#9db8ff', 0.5, R.sprint ? 0.3 : 0.16); R.ringT = 0.42;
+  const loud = R.noise > 7;
+  if ((R.moving || loud) && R.ringT <= 0 && (loud ? (grannyMesh.visible || listener) : listener)) {
+    ring(R.x, R.z, R.noise, loud ? '#ffffff' : '#9db8ff', 0.5, loud ? 0.3 : 0.16); R.ringT = 0.42;
   }
-  if (R.sprint && R.dustT <= 0) { burst(R.x - R.vx * 0.05, 0.1, R.z - R.vz * 0.05, '#e6dcc4', 1, 1, 1.2, 0.35); R.dustT = 0.07; }
+  if (R.sprint && !airborne && R.dustT <= 0) { burst(R.x - R.vx * 0.05, 0.1, R.z - R.vz * 0.05, '#e6dcc4', 1, 1, 1.2, 0.35); R.dustT = 0.07; }
 
   R.hidden = false; R.lowHidden = false;
   for (const c of world.covers) {
-    c.under = R.x > c.x0 && R.x < c.x1 && R.z > c.z0 && R.z < c.z1;
+    c.under = inside(c, R.x, R.z) && R.y < c.h - 0.3;
     if (c.under) { R.hidden = true; if (c.low) R.lowHidden = true; }
-    // el tablero también se aparta si tapa a la cucaracha desde la cámara
-    const top = c.id[0] === 'g' ? 4.6 : c.h, k = top / gfx.dir.y, qx = R.x + gfx.dir.x * k, qz = R.z + gfx.dir.z * k, m = 1.1;
-    c.hides = c.under || (qx > c.x0 - m && qx < c.x1 + m && qz > c.z0 - m && qz < c.z1 + m && R.x > c.x0 - m && R.z > c.z0 - m);
+    // el mueble también se aparta si tapa a la cucaracha desde la cámara (no si está posada encima)
+    const k = (c.topY - R.y) / gfx.dir.y, qx = R.x + gfx.dir.x * k, qz = R.z + gfx.dir.z * k, m = 1.1;
+    c.hides = c.under || (R.y < c.topY - 0.35 && qx > c.x0 - m && qx < c.x1 + m && qz > c.z0 - m && qz < c.z1 + m && R.x > c.x0 - m && R.z > c.z0 - m);
   }
 
   // beber zit
-  const src = oilSources().find((o) => dist(R.x, R.z, o.x, o.z) < o.r);
-  if (src && R.carry < CARRY_MAX && !dashing) {
+  const src = oilSources().find((o) => dist(R.x, R.z, o.x, o.z) < o.r && Math.abs(R.y - (o.y || 0)) < 0.6);
+  if (src && R.carry < CARRY_MAX && R.air < 0.2) {
     R.fill += dt / src.rate;
     if (R.fill >= 1) {
       R.fill = 0; R.carry++; sfx.sip(); burst(R.x, 0.6, R.z, '#ffd23f', 4, 2, 3); R.squash = 0.5; if (st.tut < 2) st.tut = 2;
-      if (src.amount !== undefined && --src.amount <= 0) { src.oil.visible = false; floater('vacío', src.x, src.z, '#b9c8ff'); } else if (src.amount) src.oil.scale.set(src.amount / 3, 1, src.amount / 3);
+      if (src.high && !src.tasted) { src.tasted = true; addScore(25, '¡Zit de altura!', R.x, R.z, '#9be7a0'); sfx.bonus(); }
+      if (src.amount !== undefined && --src.amount <= 0) { (src.oil || src.mesh).visible = false; floater('vacío', src.x, src.z, '#b9c8ff', 1, R.y + 1.6); } else if (src.amount && src.oil) src.oil.scale.set(src.amount / 3, 1, src.amount / 3);
     }
   } else R.fill = 0;
   for (const d of looseDrops) {
-    if (d.on && R.carry < CARRY_MAX && dist(R.x, R.z, d.x, d.z) < 0.9) { d.on = false; d.m.visible = false; R.carry++; R.squash = 0.5; sfx.pickup(); burst(d.x, 0.4, d.z, '#ffd23f', 6, 2.5, 3.5); if (st.tut < 2) st.tut = 2; }
+    if (d.on && R.carry < CARRY_MAX && R.y < 0.7 && dist(R.x, R.z, d.x, d.z) < 0.9) { d.on = false; d.m.visible = false; R.carry++; R.squash = 0.5; sfx.pickup(); burst(d.x, 0.4, d.z, '#ffd23f', 6, 2.5, 3.5); if (st.tut < 2) st.tut = 2; }
   }
   // gotitas que va dejando al cargar
   R.dripT -= dt;
   if (R.carry > 0 && sp > 1 && R.dripT <= 0) { burst(R.x - Math.cos(R.head) * 0.6, 0.3, R.z - Math.sin(R.head) * 0.6, '#f2b705', 1, 0.3, 0.6, 0.9); R.dripT = 0.3 / R.carry; }
 
   // soltar una gota: charco resbaladizo
-  const atHole = dist(R.x, R.z, world.hole.x, world.hole.z) < 1.6;
-  if (pressed.has('KeyE') && R.carry > 0 && !atHole) {
+  const atHole = R.y < 0.3 && dist(R.x, R.z, world.hole.x, world.hole.z) < 1.6;
+  if (pressed.has('KeyE') && R.carry > 0 && !atHole && R.y < 0.3) {
     const s = slicks.find((q) => !q.on) || slicks.reduce((a, b) => (a.t > b.t ? a : b));
     Object.assign(s, { on: true, t: 0, x: R.x - Math.cos(R.head) * 0.5, z: R.z - Math.sin(R.head) * 0.5 });
     s.m.position.set(s.x, 0.04, s.z); s.m.visible = true; s.m.scale.setScalar(0.2);
@@ -470,7 +494,7 @@ function updateGranny(dt) {
 
   if (G.state === 'patrol') {
     G.visit -= dt;
-    if ((R.sprint || R.dashT > 0) && dR < 9 && R.alive) G.hear = 1.3;          // correr y volar hacen ruido
+    if (R.noise > 7 && dR < 9 && R.alive) G.hear = 1.3;          // correr y aletear hacen ruido
     if (G.hear > 0) turnTo(toRoach, dt, 7);
     else if (G.linger > 0) {
       G.linger -= dt; turnTo(G.baseFace + Math.sin(st.clock * 1.4) * 1.0, dt, 3);
@@ -534,8 +558,7 @@ function updateGranny(dt) {
       S.st = 'fly'; S.t = 0; S.dur = Math.max(0.5, 0.88 - n * 0.05);
       S.from.set(G.x, 4.6, G.z);
       S.to.set(clamp(G.lastX + R.vx * lead, ROOM.x0 + 0.6, ROOM.x1 - 0.6), 0.15, clamp(G.lastZ + R.vz * lead, ROOM.z0 + 0.6, ROOM.z1 - 0.6));
-      const cover = world.covers.find((c) => S.to.x > c.x0 && S.to.x < c.x1 && S.to.z > c.z0 && S.to.z < c.z1);
-      S.harmless = !!cover; if (cover) S.to.y = cover.h + 0.15;
+      S.to.y = supportAt(S.to.x, S.to.z, 99) + 0.15; // cae sobre lo que haya: mesa, encimera o suelo
       G.throwCd = Math.max(0.95, 1.9 - n * 0.14); G.arm = 0.4; sfx.whoosh();
     }
   }
@@ -549,14 +572,15 @@ function updateSlipper(dt) {
     const k = Math.min(1, S.t / S.dur);
     slipMesh.position.lerpVectors(S.from, S.to, k); slipMesh.position.y += Math.sin(k * Math.PI) * 4;
     slipMesh.rotation.set(0, st.clock * 9, k * 14);
-    marker.visible = !S.harmless; marker.position.set(S.to.x, 0.06, S.to.z); marker.scale.setScalar(0.35 + k * 0.95);
+    marker.visible = true; marker.position.set(S.to.x, S.to.y - 0.08, S.to.z); marker.scale.setScalar(0.35 + k * 0.95);
     marker.material.color.set('#ff2d2d'); marker.material.opacity = 0.3 + 0.3 * Math.sin(st.clock * 30);
     if (k >= 1) {
       S.st = 'landed'; S.t = 0; slipMesh.rotation.set(0, rand(0, 6), 0); sfx.slap(); st.shake = Math.max(st.shake, 0.3); hitstop(0.05);
       burst(S.to.x, S.to.y, S.to.z, '#e9dcc0', 12, 6, 3.5); ring(S.to.x, S.to.z, 2.6, '#ffffff', 0.35, 0.6);
       const d = dist(R.x, R.z, S.to.x, S.to.z);
-      if (!S.harmless && !R.hidden && d < 1.3) killRoach('slipper');
-      else if (R.alive && d < 2.9) { st.slow = 0.35; addScore(10, '¡Por los pelos!', R.x, R.z, '#9be7a0'); sfx.bonus(); }
+      const level = Math.abs(R.y + 0.15 - S.to.y) < 1.2; // misma superficie
+      if (level && d < 1.3) killRoach('slipper');
+      else if (R.alive && level && d < 2.9) { st.slow = 0.35; addScore(10, '¡Por los pelos!', R.x, R.z, '#9be7a0'); sfx.bonus(); }
     }
   } else if (S.st === 'landed') {
     if (S.t > 0.5) { S.st = 'back'; S.t = 0; S.from.copy(slipMesh.position); }
@@ -578,7 +602,7 @@ function updateSpray(dt) {
   }
   cloud.visible = true;
   cloud.children.forEach((m, i) => { m.position.y = 0.7 + Math.sin(st.clock * 2 + i) * 0.25; m.scale.setScalar(Math.min(1, (3.6 - P.t) * 3) * Math.min(1, P.t * 2)); });
-  if (R.alive && dist(R.x, R.z, P.x, P.z) < 2.3) { R.poison += dt; if (R.poison > 0.85) killRoach('spray'); }
+  if (R.alive && R.y < 2.5 && dist(R.x, R.z, P.x, P.z) < 2.3) { R.poison += dt; if (R.poison > 0.85) killRoach('spray'); }
   else R.poison = Math.max(0, R.poison - dt);
   if (P.t <= 0) P.st = 'idle';
 }
@@ -611,8 +635,8 @@ function updateCat(dt) {
   } else if (K.state === 'pounce') {
     K.x = clamp(K.x + K.vx * dt, ROOM.x0 + 1, ROOM.x1 - 1); K.z = clamp(K.z + K.vz * dt, ROOM.z0 + 1, ROOM.z1 - 1);
     if (R.alive && !R.lowHidden && d < 1.15) {
-      if (R.air < 0.25) killRoach('cat');
-      else if (!K.dodged) { K.dodged = true; st.slow = 0.35; addScore(15, '¡Olé!', R.x, R.z, '#9be7a0'); sfx.bonus(); }
+      if (R.air < 0.25 && R.y < 2.4) killRoach('cat');
+      else if (!K.dodged && R.air >= 0.25) { K.dodged = true; st.slow = 0.35; addScore(15, '¡Olé!', R.x, R.z, '#9be7a0'); sfx.bonus(); }
     }
     if (takeSlick(K.x, K.z, 1.2)) { K.state = 'slide'; K.t = 2.4; sfx.slip(); addScore(30, '¡Patinazo!', K.x, K.z, '#9be7a0'); burst(K.x, 0.2, K.z, '#f2b705', 8, 4, 3); }
     else if (K.t <= 0) { K.state = 'recover'; K.t = 1.5; burst(K.x, 0.1, K.z, '#e6dcc4', 6, 3, 1.5, 0.4); }
@@ -627,7 +651,7 @@ function updateChicks(dt) {
   for (const c of C) {
     if (!c.on) continue;
     c.t -= dt;
-    const d = dist(R.x, R.z, c.x, c.z), sees = R.alive && R.inv <= 0 && !R.hidden && d < (R.sprint || R.dashT > 0 ? 6.2 : 4.3);
+    const d = dist(R.x, R.z, c.x, c.z), sees = R.alive && R.inv <= 0 && !R.hidden && R.y < 1.3 && d < (R.noise > 7 ? 6.2 : 4.3);
     const go = (tx, tz, speed) => { const dx = tx - c.x, dz = tz - c.z, l = Math.hypot(dx, dz) || 1; c.x += dx / l * speed * dt; c.z += dz / l * speed * dt; c.face += wrap(Math.atan2(dz, dx) - c.face) * Math.min(1, dt * 9); c.walk += dt * speed * 3; return l; };
     if (c.state === 'wander') {
       if (sees) { c.state = 'chase'; c.t = 3.4; sfx.cluck(); floater('!', c.x, c.z, '#ff5a5a', 2, 2.2); }
@@ -639,13 +663,13 @@ function updateChicks(dt) {
       c.face += wrap(Math.atan2(R.z - c.z, R.x - c.x) - c.face) * Math.min(1, dt * 10);
       if (c.t <= 0) {
         sfx.peck(); burst(c.x + Math.cos(c.face), 0.1, c.z + Math.sin(c.face), '#e6dcc4', 4, 2, 1.5, 0.3);
-        if (R.alive && !R.hidden && R.air < 0.25 && d < 1.55) killRoach('peck');
+        if (R.alive && !R.hidden && R.air < 0.25 && R.y < 1 && d < 1.55) killRoach('peck');
         else if (R.alive && d < 2.6) { st.slow = 0.3; addScore(15, '¡Olé!', R.x, R.z, '#9be7a0'); sfx.bonus(); }
         c.state = 'rest'; c.t = 0.9;
       }
     } else if (c.t <= 0) { c.state = 'wander'; c.t = rand(1, 3); c.tx = c.x; c.tz = c.z; }
     if ((c.state === 'wander' || c.state === 'chase') && takeSlick(c.x, c.z, 1.1)) { c.state = 'slide'; c.t = 2.6; sfx.slip(); addScore(30, '¡Patinazo!', c.x, c.z, '#9be7a0'); burst(c.x, 0.2, c.z, '#f2b705', 8, 4, 3); }
-    collide(c, 0.55);
+    collide(c, 0.55, 0);
   }
 }
 
@@ -660,7 +684,7 @@ function updateCine(dt) {
   if (text && Math.floor(before * 34) !== Math.floor(cine.t * 34) && cine.t * 34 < text.length && Math.floor(cine.t * 34) % 2 === 0) sfx.blip();
   if (cine.t >= s.dur) { cine.i++; cine.t = 0; if (cine.i >= cine.steps.length) endCine(); else cine.steps[cine.i].enter?.(); }
 }
-const place = (x, z, head) => { Object.assign(R, { x, z, head, vx: 0, vz: 0, air: 0, carry: 0, alive: true, inv: 0, scared: 0 }); };
+const place = (x, z, head) => { Object.assign(R, { x, z, head, vx: 0, vz: 0, y: 0, vy: 0, air: 0, wing: 0, carry: 0, alive: true, inv: 0, scared: 0 }); };
 
 const openingSteps = () => [
   { dur: 3.6, art: 'night', cap: 'Marrakech. Las 3:07 de la madrugada.' },
@@ -743,35 +767,36 @@ function updateLight(dt) {
 
 const camT = new THREE.Vector3();
 function updateCamera(dt, raw) {
-  let tx, tz, zoom = 1, rate = 5;
+  let tx, tz, ty = 0, zoom = 1, rate = 5;
   const step = st.mode === 'cine' ? cine.steps[cine.i] : null;
   if (step?.cam) { [tx, tz, zoom] = step.cam; rate = 3.2; }
   else if (st.mode === 'title' || step) { tx = cam.x; tz = cam.z; }
   else if (st.mode === 'clear') { tx = world.hole.x + 3.6; tz = world.hole.z + 1.6; zoom = 1.6; rate = 3; }
   else {
-    tx = clamp(R.x + R.vx * 0.25, -12, 12); tz = clamp(R.z + R.vz * 0.25, -7.5, 7.5);
+    tx = clamp(R.x + R.vx * 0.25, -12, 12); tz = clamp(R.z + R.vz * 0.25, -7.5, 7.5); ty = R.y * 0.7;
     if (!R.alive || st.mode === 'over') { tx = R.x; tz = R.z; zoom = 1.35; }
   }
   const k = 1 - Math.exp(-raw * rate);
-  cam.x += (tx - cam.x) * k; cam.z += (tz - cam.z) * k;
+  cam.x += (tx - cam.x) * k; cam.z += (tz - cam.z) * k; cam.y += (ty - cam.y) * k;
   st.kick = Math.max(0, st.kick - raw * 0.5);
   st.zoom += (zoom - st.zoom) * (1 - Math.exp(-raw * 4));
   gfx.setZoom(st.zoom + st.kick);
   st.shake = Math.max(0, st.shake - raw);
   const s = st.shake * 0.9;
-  gfx.setTarget(camT.set(cam.x + rand(-s, s), 0, cam.z + rand(-s, s)));
+  gfx.setTarget(camT.set(cam.x + rand(-s, s), cam.y, cam.z + rand(-s, s)));
 }
 
 // ---------- sincronizar mallas ----------
 function syncMeshes(dt) {
   const sp = Math.hypot(R.vx, R.vz);
   R.walk += dt * Math.min(sp, 9) * 3.2;
-  roachMesh.position.set(R.x, 0, R.z);
+  roachMesh.position.set(R.x, R.y, R.z);
   if (R.alive) {
     roachMesh.rotation.y = -R.head;
     if (st.mode !== 'cine') roachMesh.visible = R.inv <= 0 || Math.floor(st.clock * 14) % 2 === 0;
     const scared = st.mode === 'play' ? clamp(st.detect * 1.5, 0, 1) : R.scared;
-    animRoach(roachMesh, { phase: R.walk, speed: sp / 6.4, time: st.clock, turn: R.turn, air: R.air, wing: R.wing, scared, carry: R.carry, squash: R.squash });
+    const show = st.mode === 'cine' || st.mode === 'clear'; // fuera de la partida, R.air es un saltito de atrezo
+    animRoach(roachMesh, { phase: R.walk, speed: sp / 6.4, time: st.clock, turn: R.turn, air: show ? 0 : R.air, hop: show ? R.air : 0, wing: R.wing, scared, carry: R.carry, squash: R.squash });
   }
   babies.forEach((b, i) => {
     b.hop = Math.max(0, b.hop - dt);
@@ -863,7 +888,8 @@ function drawWorldMarks() {
       const src = oilSources().reduce((a, b) => (dist(R.x, R.z, a.x, a.z) < dist(R.x, R.z, b.x, b.z) ? a : b));
       pointer(src.x, src.z, 'ZIT', GOLD);
     }
-    const p = proj(R.x, 1.3 + R.air, R.z);
+    const p = proj(R.x, R.y + 1.3, R.z);
+    if (R.stam < 0.999) hud.bar(p.x - 9, p.y - 5, 18, 2, R.stam, R.stam > 0.3 ? '#7dd3fc' : '#ff5a5a');
     if (R.fill > 0) hud.bar(p.x - 9, p.y - 9, 18, 3, R.fill, GOLD);
     if (st.detect > 0.02 && G.state === 'doze') { hud.bar(p.x - 10, p.y - 14, 20, 3, st.detect, st.detect > 0.6 ? RED : '#ffb347'); hud.text('ruido', p.x, p.y - 21, { color: st.detect > 0.6 ? RED : '#ffb347' }); }
     else if (st.detect > 0.02) {
@@ -915,8 +941,8 @@ function drawPlayHud() {
   for (let i = 0; i < 3; i++) hud.roach(W - 72 + i * 13, 22, i < st.lives);
   // habilidades
   let x = 4; const y = H - 17;
-  x += hud.keycap('ESP', x, y, R.dashCd <= 0) + 3;
-  hud.bar(x, y + 9, 26, 2, 1 - R.dashCd / DASH_CD, R.dashCd <= 0 ? GREEN : '#6a6578'); hud.text('vuelo', x, y + 3, { align: 'left', color: R.dashCd <= 0 ? CREAM : '#8a86a0' });
+  x += hud.keycap('ESP', x, y, R.stam > 0.1) + 3;
+  hud.bar(x, y + 9, 26, 2, R.stam, R.stam > 0.3 ? '#7dd3fc' : RED); hud.text('volar', x, y + 3, { align: 'left', color: R.stam > 0.1 ? CREAM : '#8a86a0' });
   x += 34; x += hud.keycap('E', x, y, R.carry > 0) + 3;
   hud.text('soltar zit', x, y + 5, { align: 'left', color: R.carry > 0 ? CREAM : '#8a86a0' });
   hud.keycap('SHIFT', W - 70, y, true); hud.text('correr', W - 4, y + 5, { align: 'right', color: R.sprint ? GOLD : CREAM });
@@ -1029,7 +1055,7 @@ function drawHud() {
     hud.rect(0, 0, W, H, 'rgba(6,7,18,0.6)');
     const w = 190, y = Math.round(H * 0.22); hud.panel(cx - w / 2, y, w, 108);
     hud.text('PAUSA', cx, y + 15, { scale: 2, color: GOLD });
-    [['WASD / flechas', 'moverse'], ['SHIFT', 'correr (hace ruido)'], ['ESPACIO', 'vuelo corto'], ['E', 'soltar una gota'], ['M', 'silenciar'], ['P', 'seguir']].forEach(([a, b], i) => {
+    [['WASD / flechas', 'moverse'], ['SHIFT', 'correr (hace ruido)'], ['ESPACIO', 'mantener: volar y subirse'], ['E', 'soltar una gota'], ['M', 'silenciar'], ['P', 'seguir']].forEach(([a, b], i) => {
       hud.text(a, cx - 6, y + 34 + i * 11, { align: 'right', color: CREAM, outline: null }); hud.text(b, cx + 4, y + 34 + i * 11, { align: 'left', color: SOFT, outline: null });
     });
   }

@@ -71,10 +71,10 @@ export function makeRoach({ baby = false } = {}) {
   return root;
 }
 
-// a: { phase, speed 0..1, time, turn -1..1, air 0..1, wing 0..1, scared 0..1, carry, squash 0..1 }
+// a: { phase, speed 0..1, time, turn -1..1, air 0..1 (postura de vuelo), hop (salto solo visual), wing 0..1, scared 0..1, carry, squash 0..1 }
 export function animRoach(root, a) {
   const u = root.userData, mv = Math.min(1, a.speed), sq = a.squash || 0;
-  u.body.position.y = a.air * 0.75 + Math.abs(Math.sin(a.phase)) * 0.025 * mv;
+  u.body.position.y = (a.hop || 0) * 0.75 + Math.abs(Math.sin(a.phase)) * 0.025 * mv + a.air * Math.sin(a.time * 30) * 0.02;
   u.body.rotation.set(-a.turn * 0.35, 0, a.air * 0.3 - mv * 0.04);
   u.body.scale.set(1 + mv * 0.07 + sq * 0.2, 1 - sq * 0.35, 1 - mv * 0.04 + sq * 0.2);
   u.abdomen.scale.y = 0.19 * (1 + Math.sin(a.time * 3) * 0.05 * (1 - mv));

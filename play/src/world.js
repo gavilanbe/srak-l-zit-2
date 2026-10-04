@@ -67,8 +67,9 @@ function kit(root) {
   const K = {
     L,
     add: (o, x, y, z) => put(root, o, x, y, z),
-    solid: (x0, x1, z0, z1) => L.colliders.push({ x0, x1, z0, z1 }),
-    round: (x, z, r) => L.colliders.push({ x, z, r }),
+    // h: altura de la pieza (99 = no se puede sobrevolar); y0: hueco por debajo
+    solid: (x0, x1, z0, z1, h = 99, y0 = 0) => L.colliders.push({ x0, x1, z0, z1, h, y0 }),
+    round: (x, z, r, h = 99) => L.colliders.push({ x, z, r, h, y0: 0 }),
 
     floor(tex, side = '#4a3828') {
       K.add(box(30, 0.8, 20, side), 0, -0.41, 0);
@@ -88,21 +89,21 @@ function kit(root) {
 
     rug(x, z, w, d, tex) { const r = K.add(plane(w, d, toon('#ffffff', canvasTex(64, 40, tex))), x, 0.012, z); r.rotation.x = -Math.PI / 2; r.castShadow = false; },
 
-    cover(id, x0, x1, z0, z1, h, top) { // escondite: zona + lo que se aparta para dejar ver + sombra pintada
+    cover(id, x0, x1, z0, z1, h, top, topY = h) { // escondite: zona + lo que se aparta para dejar ver + sombra pintada; topY: altura a la que se posa encima
       const w = x1 - x0, d = z1 - z0, decal = K.add(plane(w, d, SHADE), (x0 + x1) / 2, 0.02, (z0 + z1) / 2);
       decal.rotation.x = -Math.PI / 2; decal.visible = false;
-      L.covers.push({ id, x0, x1, z0, z1, h, top, under: false, low: h < 2.5, decal });
+      L.covers.push({ id, x0, x1, z0, z1, h, topY, top, under: false, low: h < 2.5, decal });
     },
 
-    table(x, z, w, d, h, color, leg = 0.4, id = '') {
+    table(x, z, w, d, h, color, leg = 0.4, id = '', topY = h) {
       const top = new THREE.Group(); root.add(top);
       put(top, box(w, 0.3, d, color), x, h - 0.15, z);
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
         const lx = x + sx * (w / 2 - leg / 2 - 0.15), lz = z + sz * (d / 2 - leg / 2 - 0.15);
         K.add(box(leg, h - 0.3, leg, color), lx, (h - 0.3) / 2, lz);
-        K.solid(lx - leg / 2, lx + leg / 2, lz - leg / 2, lz + leg / 2);
+        K.solid(lx - leg / 2, lx + leg / 2, lz - leg / 2, lz + leg / 2, h - 0.3);
       }
-      K.cover(id, x - w / 2, x + w / 2, z - d / 2, z + d / 2, h, top);
+      K.cover(id, x - w / 2, x + w / 2, z - d / 2, z + d / 2, h, top, topY);
       return top;
     },
 
@@ -111,9 +112,9 @@ function kit(root) {
       put(top, cyl(r, r, 0.14, color, 14), x, h, z);
       for (const a of [0, 2.1, 4.2]) {
         const lx = x + Math.cos(a) * r * 0.62, lz = z + Math.sin(a) * r * 0.62;
-        K.add(box(0.2, h - 0.05, 0.2, '#6b4a16'), lx, (h - 0.05) / 2, lz); K.solid(lx - 0.1, lx + 0.1, lz - 0.1, lz + 0.1);
+        K.add(box(0.2, h - 0.05, 0.2, '#6b4a16'), lx, (h - 0.05) / 2, lz); K.solid(lx - 0.1, lx + 0.1, lz - 0.1, lz + 0.1, h - 0.1);
       }
-      K.cover(id, x - r * 0.75, x + r * 0.75, z - r * 0.75, z + r * 0.75, h, top);
+      K.cover(id, x - r * 0.75, x + r * 0.75, z - r * 0.75, z + r * 0.75, h, top, h + 0.07);
       return top;
     },
 
@@ -139,7 +140,15 @@ function kit(root) {
     jar(x, z, s = 1, color = '#b5562b') { // tinaja de barro
       K.add(sph(1, color, 10, 7), x, 1.15 * s, z).scale.set(0.95 * s, 1.2 * s, 0.95 * s);
       K.add(cyl(0.45 * s, 0.6 * s, 0.5 * s, color, 10), x, 2.3 * s, z); K.add(cyl(0.5 * s, 0.5 * s, 0.1 * s, '#8f3f1c', 10), x, 2.58 * s, z);
-      K.round(x, z, 0.95 * s);
+      K.round(x, z, 0.95 * s, 2.65 * s);
+    },
+
+    cruet(x, y, z, parent = root) { // aceitera en alto: pocas gotas, pero rapidísimas. Solo se llega volando
+      const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g);
+      put(g, cyl(0.46, 0.46, 0.04, basic('#f2b705'), 10), 0, 0.02, 0).castShadow = false;
+      put(g, cyl(0.2, 0.3, 0.5, basic('#ffd23f'), 8), 0, 0.27, 0).castShadow = false;
+      put(g, cyl(0.08, 0.12, 0.3, '#e9c46a', 6), 0, 0.66, 0); put(g, sph(0.1, basic('#fff6d6'), 5, 4), 0, 0.88, 0).castShadow = false;
+      (L.high ||= []).push({ x, z, y, r: 1.3, rate: 0.3, amount: 4, high: true, mesh: g, tasted: false });
     },
 
     puddle(x, z, r) { K.add(cyl(r, r, 0.03, basic('#f2b705'), 14), x, 0.02, z).castShadow = false; },
@@ -168,27 +177,28 @@ function cocina(K) {
   add(box(2.2, 3, 9.5, '#2a9d8f'), -13.9, 1.5, -5.25);              // encimera
   add(box(2.4, 0.25, 9.7, '#e9d8a6'), -13.9, 3.12, -5.25);
   for (const z of [-8.6, -6.3, -4, -1.8]) add(box(0.08, 0.5, 0.12, '#e9c46a'), -12.78, 2.2, z);
-  solid(-15, -12.8, -10, -0.5);
+  solid(-15, -12.8, -10, -0.5, 3.25); K.cruet(-13.9, 3.25, -3);
   add(box(2.5, 6, 2.4, '#e4e4dc'), -9.25, 3, -8.8);                  // nevera
   add(box(2.52, 0.08, 2.42, '#9a9a94'), -9.25, 3.9, -8.8); add(box(0.12, 1.2, 0.12, '#8a8a84'), -8.3, 4.8, -7.55);
-  solid(-10.5, -8, -10, -7.6);
-  add(sph(0.85, '#f1ede0', 8, 6), -6.5, 0.6, -8.9).scale.set(1, 0.95, 0.9); round(-6.5, -8.9, 0.85); // saco de harina
+  solid(-10.5, -8, -10, -7.6, 6.05); K.cruet(-9.25, 6.05, -8.7);
+  add(sph(0.85, '#f1ede0', 8, 6), -6.5, 0.6, -8.9).scale.set(1, 0.95, 0.9); round(-6.5, -8.9, 0.85, 1.4); // saco de harina
   add(box(3, 3, 2.2, '#d6d6d0'), -3, 1.5, -8.9);                     // cocina
   add(box(3.02, 0.12, 2.22, '#2b2b2b'), -3, 3.05, -8.9); add(box(2.2, 1.3, 0.1, '#33373d'), -3, 1.3, -7.78);
   add(cyl(0.7, 0.55, 0.3, '#b5562b', 10), -3.6, 3.26, -8.9); add(cone(0.62, 0.95, '#c4622d'), -3.6, 3.88, -8.9);
-  solid(-4.5, -1.5, -10, -7.8);
+  solid(-4.5, -1.5, -10, -7.8, 3.1);
   add(cyl(0.75, 0.75, 1.9, '#2f6fd0', 10), 0.2, 0.95, -8.8);         // butano
   add(cyl(0.4, 0.7, 0.4, '#2f6fd0', 10), 0.2, 2.1, -8.8); add(cyl(0.45, 0.45, 0.14, '#c8c8c8', 8), 0.2, 2.35, -8.8);
-  round(0.2, -8.8, 0.8);
+  round(0.2, -8.8, 0.8, 2.45);
 
   K.rug(-2, 1, 11, 7, rugTex('#8f1d2c', '#e9c46a', '#1d3557'));
   const t = K.table(-2, 1, 8, 4.5, 3, '#8a5a2b', 0.45, 'mesa');
   put(t, cyl(0.85, 0.65, 0.3, '#b5562b', 10), -3.6, 3.15, 1); put(t, cone(0.75, 1.1, '#c4622d'), -3.6, 3.85, 1);
   put(t, cyl(1.1, 1.1, 0.08, '#cfd6dc', 12), -0.6, 3.04, 0.8); K.teaSet(t, -0.9, 3.05, 0.7);
   put(t, sph(0.75, '#d9a441', 10, 6), 0.9, 3.1, 1.6).scale.y = 0.3; put(t, sph(0.75, '#cf9838', 10, 6), 1.2, 3.25, 1.3).scale.y = 0.3;
+  K.cruet(0.8, 3.0, -0.3, t);
   K.table(-7.7, 1.2, 1.6, 1.6, 1.8, '#b5651d', 0.25, 'taburete1');
   K.table(0.5, -3.4, 1.6, 1.6, 1.8, '#b5651d', 0.25, 'taburete2');
-  const bench = K.table(8.9, 7.2, 6.8, 2.2, 1.5, '#5e3b1e', 0.35, 'sedari');
+  const bench = K.table(8.9, 7.2, 6.8, 2.2, 1.5, '#5e3b1e', 0.35, 'sedari', 2.3);
   put(bench, box(6.6, 0.4, 2.0, '#c1440e'), 8.9, 1.7, 7.2);
   for (const [cx, c] of [[6.6, '#264653'], [8.9, '#e9c46a'], [11.2, '#264653']]) put(bench, box(1.5, 0.45, 1.5, c), cx, 2.1, 7.2);
   const tea = K.roundTable(10.5, 2.5, 1.6, 1.3, '#d4a017', 'te');
@@ -198,7 +208,7 @@ function cocina(K) {
   put(bidon, box(1.3, 1.9, 1.0, '#d4a80f'), 0, 0.95, 0); put(bidon, box(1.0, 0.9, 1.04, '#2d6a4f'), 0, 0.95, 0);
   put(bidon, box(0.5, 0.3, 1.06, '#f1faee'), 0, 1.0, 0); put(bidon, cyl(0.2, 0.2, 0.3, '#2d6a4f', 8), -0.3, 2.05, 0);
   put(bidon, box(0.5, 0.14, 0.2, '#d4a80f'), 0.3, 2.0, 0);
-  bidon.position.set(13.7, 0, 8.3); bidon.rotation.y = 0.5; round(13.7, 8.3, 0.85); K.puddle(13.5, 8.0, 1.35);
+  bidon.position.set(13.7, 0, 8.3); bidon.rotation.y = 0.5; round(13.7, 8.3, 0.85, 2.0); K.puddle(13.5, 8.0, 1.35);
   L.oil.push({ x: 13.6, z: 8.2, r: 2.0, rate: 1.0 });
 
   const bottle = L.bottle = new THREE.Group(); L.root.add(bottle);  // botella junto a la puerta (2.ª noche)
@@ -206,7 +216,7 @@ function cocina(K) {
   put(bottle, cyl(0.16, 0.16, 0.14, '#e9c46a', 8), 0, 1.8, 0);
   put(bottle, cyl(0.9, 0.9, 0.03, basic('#f2b705'), 12), 0.2, 0.02, 0.5).castShadow = false;
   bottle.position.set(3.0, 0, -8.9);
-  L.bottleCollider = { x: 3.0, z: -8.9, r: 0.5, off: true }; L.colliders.push(L.bottleCollider);
+  L.bottleCollider = { x: 3.0, z: -8.9, r: 0.5, h: 1.9, y0: 0, off: true }; L.colliders.push(L.bottleCollider);
   L.oil.push({ x: 3.1, z: -8.6, r: 1.6, rate: 0.85, bottle: true });
 
   K.graph([[9.5, -7.8], [5, -6.3], [-5.5, -5.6], [-10.8, -3.6], [-10.2, 6], [0, 7.2], [5.6, 1.6], [12.6, -3]],
@@ -230,30 +240,31 @@ function salon(K) {
   K.hole(7);
   K.rug(-1, 1, 15, 9.5, rugTex('#1d3557', '#e9c46a', '#8f1d2c'));
 
-  const sa = K.table(-13.75, -3, 2.3, 10, 1.5, '#5e3b1e', 0.3, 'sedariA');     // sedaris pegados a la pared
+  const sa = K.table(-13.75, -3, 2.3, 10, 1.5, '#5e3b1e', 0.3, 'sedariA', 1.95);     // sedaris pegados a la pared
   put(sa, box(2.1, 0.45, 9.8, '#1d6f73'), -13.75, 1.72, -3); put(sa, box(0.5, 1.2, 9.8, '#e9c46a'), -14.6, 2.5, -3);
   for (const z of [-6, -3, 0]) put(sa, box(1.2, 0.4, 1.2, '#c1440e'), -13.5, 2.1, z);
-  const sb = K.table(-3, -8.75, 11, 2.3, 1.5, '#5e3b1e', 0.3, 'sedariB');
+  const sb = K.table(-3, -8.75, 11, 2.3, 1.5, '#5e3b1e', 0.3, 'sedariB', 1.95);
   put(sb, box(10.8, 0.45, 2.1, '#1d6f73'), -3, 1.72, -8.75); put(sb, box(10.8, 1.2, 0.5, '#e9c46a'), -3, 2.5, -9.6);
   for (const x of [-7, -3, 1]) put(sb, box(1.2, 0.4, 1.2, '#c1440e'), x, 2.1, -8.5);
+  K.cruet(-5, 1.95, -8.9, sb);
 
-  add(box(4, 1.6, 1.4, '#3b2a1a'), 10, 0.8, -9.2); solid(8, 12, -10, -8.5);    // la tele
+  add(box(4, 1.6, 1.4, '#3b2a1a'), 10, 0.8, -9.2); solid(8, 12, -10, -8.5, 1.6); K.cruet(11.5, 1.6, -9.1);    // la tele
   add(box(3.3, 2.1, 0.2, '#15151c'), 10, 2.75, -9.3);
   L.tvMat = basic('#7fb2ff'); add(box(2.95, 1.75, 0.06, L.tvMat), 10, 2.75, -9.17).castShadow = false;
   L.tvLight = new THREE.PointLight('#6fa8ff', 14, 16, 1.4); L.tvLight.position.set(9.6, 2.6, -7.2); L.root.add(L.tvLight);
-  add(box(2.4, 5, 1.2, '#5e3b1e'), 5.2, 2.5, -9.4); solid(4, 6.4, -10, -8.8);   // librería
+  add(box(2.4, 5, 1.2, '#5e3b1e'), 5.2, 2.5, -9.4); solid(4, 6.4, -10, -8.8, 5); K.cruet(5.2, 5, -9.4);   // librería
   for (const [y, c] of [[1.2, '#c1440e'], [2.4, '#1d6f73'], [3.6, '#e9c46a']]) add(box(2.0, 0.7, 0.2, c), 5.2, y, -8.78);
 
-  add(box(2.6, 1.0, 2.6, '#7a2a2a'), 3, 0.5, 1.5); add(box(0.6, 2.6, 2.6, '#7a2a2a'), 4.1, 1.3, 1.9).rotation.y = -0.6; // sillón de jeddi
+  add(box(2.8, 1.3, 2.8, '#7a2a2a'), 3, 0.65, 1.5); add(box(0.7, 3.4, 2.8, '#7a2a2a'), 4.2, 1.7, 2.0).rotation.y = -0.6; // sillón de jeddi
   round(3, 1.5, 1.55);
-  L.enemyPos = { x: 3, z: 1.5, y: 0.7, face: -0.95 };
+  L.enemyPos = { x: 3, z: 1.5, y: -0.9, face: -0.95 };
 
   const rt = K.roundTable(-5, -2.2, 2.2, 1.3, '#d4a017', 'bandeja'); K.teaSet(rt, -5, 1.37, -2.2);
   const st2 = K.table(8.2, 5, 2.6, 2.6, 1.6, '#6b4a16', 0.25, 'mesita');
   put(st2, cyl(0.3, 0.4, 0.9, '#d4a017', 6), 8.2, 2.05, 5); put(st2, cone(0.4, 0.5, '#d4a017', 6), 8.2, 2.75, 5);
-  for (const [x, z] of [[-1.5, 4.6], [-8, 4.8], [7.2, -3.6]]) { add(cyl(0.85, 0.95, 0.9, '#b5651d', 10), x, 0.45, z); add(cyl(0.7, 0.7, 0.1, '#e9c46a', 10), x, 0.95, z); round(x, z, 0.95); } // pufs
+  for (const [x, z] of [[-1.5, 4.6], [-8, 4.8], [7.2, -3.6]]) { add(cyl(0.85, 0.95, 0.9, '#b5651d', 10), x, 0.45, z); add(cyl(0.7, 0.7, 0.1, '#e9c46a', 10), x, 0.95, z); round(x, z, 0.95, 1.0); } // pufs
   add(cyl(0.7, 0.5, 1.0, '#b5562b', 10), 13.2, 0.5, -4); add(sph(1.0, '#2d6a4f', 8, 6), 13.2, 1.8, -4); round(13.2, -4, 0.8);
-  add(cyl(0.35, 0.45, 1.2, '#d4a017', 6), -11.6, 0.6, 8.4); round(-11.6, 8.4, 0.5);                     // farol
+  add(cyl(0.35, 0.45, 1.2, '#d4a017', 6), -11.6, 0.6, 8.4); round(-11.6, 8.4, 0.5, 1.2);                     // farol
   const lamp = new THREE.PointLight('#ffb347', 5, 7, 1.6); lamp.position.set(-11.6, 1.4, 8.4); L.root.add(lamp);
 
   K.jar(12.9, 7.7, 1, '#c98a3a'); K.puddle(12.2, 7.2, 1.3);                                                // tinaja de argán
@@ -281,7 +292,7 @@ function patio(K) {
   for (const z of [-6.5, -1.5, 8]) { add(box(0.12, 4.2, 2.6, '#d9c9a3'), -14.96, 4.7, z); const a = add(cyl(1.3, 1.3, 0.12, '#d9c9a3', 14), -14.96, 6.6, z); a.rotation.z = Math.PI / 2; } // arcos
   for (const x of [-9.5, -1, 4]) { add(box(2.6, 4.2, 0.12, '#d9c9a3'), x, 4.7, -9.96); add(cyl(1.3, 1.3, 0.12, '#d9c9a3', 14), x, 6.6, -9.96).rotation.x = Math.PI / 2; }
 
-  add(cyl(2.8, 3.0, 0.75, '#d9d2bd', 8), 0, 0.37, 0); round(0, 0, 3.0);                                   // la fuente
+  add(cyl(2.8, 3.0, 0.75, '#d9d2bd', 8), 0, 0.37, 0); round(0, 0, 3.0, 0.75); round(0, 0, 1.0, 2.23); K.cruet(0, 2.23, 0);                                   // la fuente
   L.waterMat = basic('#3fa7d6'); add(cyl(2.4, 2.4, 0.1, L.waterMat, 8), 0, 0.72, 0).castShadow = false;
   add(cyl(0.4, 0.55, 1.5, '#d9d2bd', 8), 0, 1.2, 0); add(cyl(1.0, 0.4, 0.3, '#d9d2bd', 8), 0, 2.05, 0);
   add(cyl(0.8, 0.8, 0.06, L.waterMat, 8), 0, 2.2, 0).castShadow = false;
@@ -292,15 +303,16 @@ function patio(K) {
     for (const [ox, oy, oz] of [[1.1, 0.2, 0.9], [-0.6, -0.6, 1.3], [0.4, 0.9, 1.2], [1.3, -0.5, -0.2]]) add(sph(0.2, basic('#ff9f1c'), 6, 5), x + ox, 4.4 + oy, z + oz).castShadow = false;
   }
   add(box(3, 2.2, 2, '#8a5a2b'), -9.2, 1.1, -8.9); add(box(3.2, 0.2, 2.3, '#5e3b1e'), -9.2, 2.3, -8.9).rotation.z = 0.12; // gallinero
-  add(box(1.2, 1.2, 0.1, '#1b1410'), -9.2, 0.7, -7.86); solid(-10.7, -7.7, -10, -7.8);
-  add(cyl(0.9, 0.75, 1.1, '#c79a5b', 10), -10.2, 0.55, -2.2); round(-10.2, -2.2, 0.95);                    // cesto de la ropa
+  add(box(1.2, 1.2, 0.1, '#1b1410'), -9.2, 0.7, -7.86); solid(-10.7, -7.7, -10, -7.8, 2.4); K.cruet(-9.2, 2.4, -8.9);
+  add(cyl(0.9, 0.75, 1.1, '#c79a5b', 10), -10.2, 0.55, -2.2); round(-10.2, -2.2, 0.95, 1.45);                    // cesto de la ropa
   add(sph(0.75, '#f1faee', 7, 5), -10.2, 1.2, -2.2).scale.y = 0.5;
   for (const [x, z] of [[13.2, 2.2], [-13.2, -3.2], [13.2, 9]]) { add(cyl(0.6, 0.45, 0.9, '#b5562b', 8), x, 0.45, z); add(sph(0.8, '#3a7d44', 7, 5), x, 1.5, z); round(x, z, 0.7); }
 
-  const b1 = K.table(-8, 4.2, 5, 1.8, 1.4, '#d9d2bd', 0.4, 'banco1'); put(b1, box(4.6, 0.3, 1.5, '#2b5fa8'), -8, 1.55, 4.2);
-  const b2 = K.table(8.6, 7, 5, 1.8, 1.4, '#d9d2bd', 0.4, 'banco2'); put(b2, box(4.6, 0.3, 1.5, '#c1440e'), 8.6, 1.55, 7);
+  const b1 = K.table(-8, 4.2, 5, 1.8, 1.4, '#d9d2bd', 0.4, 'banco1', 1.7); put(b1, box(4.6, 0.3, 1.5, '#2b5fa8'), -8, 1.55, 4.2);
+  const b2 = K.table(8.6, 7, 5, 1.8, 1.4, '#d9d2bd', 0.4, 'banco2', 1.7); put(b2, box(4.6, 0.3, 1.5, '#c1440e'), 8.6, 1.55, 7);
   const t = K.table(8.6, -2.6, 3.2, 3.2, 1.6, '#8a5a2b', 0.3, 'mesa');
   put(t, cyl(0.8, 0.6, 0.3, '#b5562b', 10), 8.6, 1.75, -2.6); put(t, cone(0.7, 1.0, '#c4622d'), 8.6, 2.4, -2.6);
+  K.cruet(9.6, 1.6, -1.6, t);
 
   K.jar(12.8, -7.6, 1.15); K.puddle(11.9, -6.8, 1.4);                                                     // la khabia
   L.oil.push({ x: 12.0, z: -6.8, r: 2.2, rate: 1.0 });
@@ -327,11 +339,11 @@ function hanout(K) {
   K.hole(6.5);
   const shelf = canvasTex(64, 48, shelfTex);
   const shelfMat = (rx) => { const t = shelf.clone(); t.repeat.set(rx, 1); t.needsUpdate = true; return toon('#ffffff', t); };
-  add(box(21, 5.6, 1.4, shelfMat(5)), -4.5, 2.8, -9.3); solid(-15, 6, -10, -8.6);                          // estanterías de pared
-  add(box(1.4, 5.6, 10.6, shelfMat(3)), -14.3, 2.8, -3.3); solid(-15, -13.6, -8.6, 2);
+  add(box(21, 5.6, 1.4, shelfMat(5)), -4.5, 2.8, -9.3); solid(-15, 6, -10, -8.6, 5.6); K.cruet(-1, 5.6, -9.3);                          // estanterías de pared
+  add(box(1.4, 5.6, 10.6, shelfMat(3)), -14.3, 2.8, -3.3); solid(-15, -13.6, -8.6, 2, 5.6);
   add(box(4, 5.6, 0.25, '#7a7f87'), 10, 2.8, -9.9);                                                          // persiana
   for (let y = 0.6; y < 5.4; y += 0.7) add(box(4.02, 0.08, 0.27, '#5a5f66'), 10, y, -9.9);
-  add(box(6, 3, 1.8, '#8a5a2b'), -8, 1.5, -5); add(box(6.2, 0.2, 2, '#e9d8a6'), -8, 3.1, -5); solid(-11, -5, -5.9, -4.1); // mostrador
+  add(box(6, 3, 1.8, '#8a5a2b'), -8, 1.5, -5); add(box(6.2, 0.2, 2, '#e9d8a6'), -8, 3.1, -5); solid(-11, -5, -5.9, -4.1, 3.2); K.cruet(-8, 3.2, -5); // mostrador
   add(box(1.0, 0.5, 0.8, '#b8bcc4'), -9.5, 3.45, -5); add(cyl(0.5, 0.5, 0.06, '#e9c46a', 10), -9.5, 3.9, -5);
   add(box(0.9, 0.8, 0.7, '#3b2a1a'), -6.4, 3.6, -5);
 
@@ -341,19 +353,21 @@ function hanout(K) {
     put(top, box(w + 0.2, 0.2, d + 0.2, '#4a2f18'), x, 4.5, z);
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
       const lx = x + sx * (w / 2 - 0.3), lz = z + sz * (d / 2 - 0.3);
-      add(box(0.3, 1.2, 0.3, '#3b2a1a'), lx, 0.6, lz); solid(lx - 0.15, lx + 0.15, lz - 0.15, lz + 0.15);
+      add(box(0.3, 1.2, 0.3, '#3b2a1a'), lx, 0.6, lz); solid(lx - 0.15, lx + 0.15, lz - 0.15, lz + 0.15, 1.2);
     }
-    K.cover(id, x - w / 2, x + w / 2, z - d / 2, z + d / 2, 1.2, top);
+    solid(x - w / 2, x + w / 2, z - d / 2, z + d / 2, 4.6, 1.2); // el cuerpo de la estantería: se pasa por debajo o por encima
+    K.cover(id, x - w / 2, x + w / 2, z - d / 2, z + d / 2, 1.2, top, 4.6);
+    return top;
   }
-  gondola(-3, 3.5, 9, 1.8, 'g1'); gondola(6.5, -1.5, 1.8, 7, 'g2'); gondola(9, 6.8, 7, 1.8, 'g3');
+  K.cruet(-3, 4.6, 3.5, gondola(-3, 3.5, 9, 1.8, 'g1')); gondola(6.5, -1.5, 1.8, 7, 'g2'); gondola(9, 6.8, 7, 1.8, 'g3');
 
   for (const [x, z, c] of [[-11.5, 5.2, '#c1121f'], [-9.4, 7.2, '#e9b21a'], [-12, 8.6, '#6a994e'], [1.6, 8.8, '#e76f51']]) { // sacos de especias
-    add(cyl(0.85, 0.75, 0.9, '#c79a5b', 9), x, 0.45, z); add(cone(0.78, 0.8, c, 9), x, 1.25, z); round(x, z, 0.9);
+    add(cyl(0.85, 0.75, 0.9, '#c79a5b', 9), x, 0.45, z); add(cone(0.78, 0.8, c, 9), x, 1.25, z); round(x, z, 0.9, 1.7);
   }
-  for (const [x, z] of [[12.8, -7.6], [13.1, -5.2]]) { add(cyl(1, 1, 2.6, '#2f6fd0', 12), x, 1.3, z); add(cyl(1.03, 1.03, 0.12, '#1d3557', 12), x, 1.3, z); add(cyl(1.03, 1.03, 0.12, '#1d3557', 12), x, 2.4, z); round(x, z, 1.05); } // bidones
+  for (const [x, z] of [[12.8, -7.6], [13.1, -5.2]]) { add(cyl(1, 1, 2.6, '#2f6fd0', 12), x, 1.3, z); add(cyl(1.03, 1.03, 0.12, '#1d3557', 12), x, 1.3, z); add(cyl(1.03, 1.03, 0.12, '#1d3557', 12), x, 2.4, z); round(x, z, 1.05, 2.65); } // bidones
   add(box(0.3, 0.14, 0.14, '#e9c46a'), 11.7, 0.7, -6.9); K.puddle(11.3, -6.2, 1.5);
   L.oil.push({ x: 11.4, z: -6.2, r: 2.2, rate: 0.9 });
-  add(box(1.8, 1.0, 1.4, '#8a5a2b'), 13.2, 0.5, 2.2); add(box(1.6, 0.2, 1.2, '#3a5a40'), 13.2, 1.05, 2.2); solid(12.3, 14.1, 1.5, 2.9); // caja de aceitunas
+  add(box(1.8, 1.0, 1.4, '#8a5a2b'), 13.2, 0.5, 2.2); add(box(1.6, 0.2, 1.2, '#3a5a40'), 13.2, 1.05, 2.2); solid(12.3, 14.1, 1.5, 2.9, 1.15); // caja de aceitunas
 
   K.graph([[-8, -2.5], [-1, -2.5], [3.5, -7], [10.5, -7], [10.5, 2.5], [3.8, 3.5], [3.5, 7], [-6.5, 6.8], [-9.8, 1]],
     [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 0], [1, 5]]);
