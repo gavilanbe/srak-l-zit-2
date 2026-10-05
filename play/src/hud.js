@@ -1,11 +1,22 @@
-// HUD a la misma resolución que el juego: texto con fuente de píxeles propia, paneles e iconos.
+// HUD a la misma resolución que el juego: texto con fuente de píxeles propia, marcos de latón
+// con relieve, cintas, medidores e iconos. Los marcos se pintan una vez y se guardan.
 import { measure, drawGlyphs, CELL_H } from './font.js';
 
-export const INK = '#0b0b12', GOLD = '#ffd23f', CREAM = '#fdf6e3', PANEL = '#17132e', BORDER = '#e9c46a';
+export const INK = '#0b0b12', GOLD = '#ffd23f', CREAM = '#fdf6e3', PANEL = '#1d1642', BORDER = '#e9c46a';
+const BR_HI = '#fff3b0', BR = '#e9c46a', BR_LO = '#a8782a', BR_DK = '#5e3d10';
+
+const ICONS = {
+  star: ['....X....', '....X....', '...XXX...', 'XXXXXXXXX', '.XXXXXXX.', '..XXXXX..', '..XXXXX..', '.XXX.XXX.', '.X.....X.'],
+  wing: ['.XXXXXX', 'XXXXXXX', '.XXXXXX', '..XXXXX', '...XXX.', '....X..'],
+  clock: ['.XXXXX.', 'X..X..X', 'X..X..X', 'X..XX.X', 'X.....X', 'X.....X', '.XXXXX.'],
+  eye: ['..XXXXX..', '.X.....X.', 'X..XXX..X', 'X..XXX..X', '.X.....X.', '..XXXXX..'],
+  heart: ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'],
+  skull: ['.XXXXX.', 'XXXXXXX', 'X.XXX.X', 'XXXXXXX', '.XX.XX.', '.XXXXX.', '.X.X.X.'],
+};
 
 export class Hud {
   constructor(canvas) {
-    this.c = canvas; this.g = canvas.getContext('2d'); this.cache = new Map();
+    this.c = canvas; this.g = canvas.getContext('2d'); this.cache = new Map(); this.frames = new Map();
     this.W = 0; this.H = 0;
   }
 
@@ -48,9 +59,10 @@ export class Hud {
 
   width(str, scale = 1) { return measure(String(str)) * scale; }
 
-  // y es el centro vertical de las mayúsculas
-  text(str, x, y, { scale = 1, color = '#fff', align = 'center', outline = INK } = {}) {
+  // y es el centro vertical de las mayúsculas; shadow dibuja una copia desplazada debajo
+  text(str, x, y, { scale = 1, color = '#fff', align = 'center', outline = INK, shadow = null } = {}) {
     str = String(str);
+    if (shadow) this.text(str, x, y + scale, { scale, color: shadow, align, outline: null });
     const s = this.sprite(str, color, outline), w = s.width * scale;
     const dx = align === 'center' ? x - w / 2 : align === 'right' ? x - w + scale : x - scale;
     this.g.drawImage(s, Math.round(dx), Math.round(y - 6.5 * scale), w, s.height * scale);
@@ -85,36 +97,90 @@ export class Hud {
     this.g.drawImage(s, Math.round(x - s.width / 2), Math.round(y - s.height / 2));
   }
 
-  // ---- paneles ----
-  panel(x, y, w, h, { bg = PANEL, border = BORDER } = {}) {
-    x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
-    this.rect(x + 1, y, w - 2, h, INK); this.rect(x, y + 1, w, h - 2, INK);
-    this.rect(x + 2, y + 1, w - 4, h - 2, border); this.rect(x + 1, y + 2, w - 2, h - 4, border);
-    this.rect(x + 3, y + 2, w - 6, h - 4, bg); this.rect(x + 2, y + 3, w - 4, h - 6, bg);
+  icon(name, x, y, color, outline = INK) {
+    const rows = ICONS[name]; x = Math.round(x); y = Math.round(y);
+    const pass = (c, ox, oy) => { this.g.fillStyle = c; rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === 'X') this.g.fillRect(x + i + ox, y + j + oy, 1, 1); }); };
+    if (outline) for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, 1], [-1, 1], [1, -1]]) pass(outline, ox, oy);
+    pass(color, 0, 0);
   }
 
-  bar(x, y, w, h, k, color, bg = '#2a2540') {
+  // ---- marcos ----
+  // Marco de latón con relieve, fondo añil con tramado y remaches de zellige en las esquinas.
+  // thin: versión fina para las placas del HUD. Se pinta una vez por tamaño.
+  _frame(w, h, thin, tone) {
+    const key = w + 'x' + h + (thin ? 't' : 'p') + tone;
+    let c = this.frames.get(key);
+    if (c) return c;
+    c = document.createElement('canvas'); c.width = w + 3; c.height = h + 4;
+    const g = c.getContext('2d'), R = (x, y, ww, hh, col) => { g.fillStyle = col; g.fillRect(x, y, ww, hh); };
+    const rr = (x, y, ww, hh, col) => { R(x + 2, y, ww - 4, hh, col); R(x, y + 2, ww, hh - 4, col); R(x + 1, y + 1, ww - 2, hh - 2, col); };
+    rr(3, 4, w, h, 'rgba(4,3,14,0.5)');                                   // sombra
+    rr(0, 0, w, h, INK); rr(1, 1, w - 2, h - 2, BR);                       // contorno y latón
+    R(3, 1, w - 6, 1, BR_HI); R(1, 3, 1, h - 6, BR_HI); R(3, h - 2, w - 6, 1, BR_LO); R(w - 2, 3, 1, h - 6, BR_LO);
+    const b = thin ? 2 : 4;
+    if (!thin) { rr(2, 2, w - 4, h - 4, BR_LO); R(4, 2, w - 8, 1, BR); R(2, 4, 1, h - 8, BR); rr(3, 3, w - 6, h - 6, BR_DK); }
+    else rr(2, 2, w - 4, h - 4, BR_DK);
+    const ix = b + (thin ? 1 : 0), iw = w - ix * 2, ih = h - ix * 2;      // fondo en tres bandas tramadas
+    const cols = tone === 'red' ? ['#4a1220', '#3a0e1a', '#2a0a14'] : ['#2b2160', '#1f1848', '#150f30'];
+    for (let j = 0; j < ih; j++) {
+      const t = j / ih * 3, i = Math.min(2, Math.floor(t)), edge = t - i > 0.82 && i < 2;
+      R(ix, ix + j, iw, 1, cols[i]);
+      if (edge) { g.fillStyle = cols[i + 1]; for (let x = (j & 1); x < iw; x += 2) g.fillRect(ix + x, ix + j, 1, 1); }
+    }
+    R(ix, ix, iw, 1, tone === 'red' ? '#7a2434' : '#4a3f8e');             // brillo interior arriba
+    if (!thin && h > 44) { g.fillStyle = tone === 'red' ? '#42101c' : '#261d56'; for (let y = ix + 7; y < h - ix - 4; y += 9) for (let x = ix + 6 + ((y - ix) % 18 ? 5 : 0); x < w - ix - 4; x += 10) { g.fillRect(x, y, 1, 1); g.fillRect(x - 1, y + 1, 3, 1); g.fillRect(x, y + 2, 1, 1); } }
+    if (!thin) for (const [cx, cy] of [[1, 1], [w - 8, 1], [1, h - 8], [w - 8, h - 8]]) { R(cx, cy, 7, 7, INK); R(cx + 1, cy + 1, 5, 5, BR); R(cx + 1, cy + 1, 5, 1, BR_HI); R(cx + 2, cy + 2, 3, 3, '#1f7a5c'); R(cx + 3, cy + 3, 1, 1, '#7fe0c0'); }
+    this.frames.set(key, c);
+    return c;
+  }
+
+  panel(x, y, w, h, { tone = 'blue' } = {}) { this.g.drawImage(this._frame(Math.round(w), Math.round(h), false, tone), Math.round(x), Math.round(y)); }
+  plate(x, y, w, h, { tone = 'blue' } = {}) { this.g.drawImage(this._frame(Math.round(w), Math.round(h), true, tone), Math.round(x), Math.round(y)); }
+
+  // cinta con las puntas dobladas; (cx, y) es el centro del borde superior
+  ribbon(str, cx, y, { scale = 1, color = '#b3121d', dark = '#6e0a12', light = '#ff5a5a', text = CREAM } = {}) {
+    const tw = measure(str) * scale, w = tw + 18 * scale, h = 9 * scale + 6, x = Math.round(cx - w / 2); y = Math.round(y);
+    const t = 5 * scale + 2;
+    this.rect(x - t, y + 3, t + 4, h, INK); this.rect(x + w - 4, y + 3, t + 4, h, INK);           // puntas
+    this.rect(x - t + 1, y + 4, t + 2, h - 2, dark); this.rect(x + w - 3, y + 4, t + 2, h - 2, dark);
+    this.rect(x - t + 1, y + 4 + ((h - 2) >> 1) - 1, 3, 3, INK); this.rect(x + w + t - 4, y + 4 + ((h - 2) >> 1) - 1, 3, 3, INK);
+    this.rect(x - 1, y - 1, w + 2, h + 2, INK); this.rect(x, y, w, h, color);
+    this.rect(x, y, w, 1, light); this.rect(x, y + h - 1, w, 1, dark); this.rect(x + 2, y + 2, w - 4, 1, BR); this.rect(x + 2, y + h - 3, w - 4, 1, BR);
+    this.text(str, cx, y + h / 2 + (scale > 1 ? 0.5 : 0), { scale, color: text, outline: null, shadow: dark });
+  }
+
+  divider(cx, y, w) { // greca de rombos
+    this.rect(cx - w / 2, y, w, 1, BR_LO);
+    for (let i = -3; i <= 3; i++) { const x = Math.round(cx + i * 10); this.rect(x - 2, y - 1, 5, 3, INK); this.rect(x - 1, y - 1, 3, 3, i % 2 ? '#2a9d8f' : BR); this.rect(x, y - 2, 1, 5, i % 2 ? '#2a9d8f' : BR); }
+  }
+
+  bar(x, y, w, h, k, color, bg = '#120d2a') {
+    x = Math.round(x); y = Math.round(y); const f = Math.round(w * Math.max(0, Math.min(1, k)));
     this.rect(x - 1, y - 1, w + 2, h + 2, INK); this.rect(x, y, w, h, bg);
-    this.rect(x, y, Math.round(w * Math.max(0, Math.min(1, k))), h, color);
+    if (f > 0) { this.rect(x, y, f, h, color); if (h > 2) { this.rect(x, y, f, 1, 'rgba(255,255,255,0.55)'); this.rect(x, y + h - 1, f, 1, 'rgba(0,0,0,0.3)'); } }
   }
 
   // bocadillo con rabito hacia (ax, ay)
   bubble(lines, ax, ay, { bg = CREAM, color = INK, border = INK, shake = 0 } = {}) {
-    const w = Math.max(...lines.map((l) => measure(l))) + 10, h = lines.length * 10 + 7;
-    let x = Math.round(ax - w / 2 + (Math.random() - 0.5) * shake), y = Math.round(ay - h - 7 + (Math.random() - 0.5) * shake);
-    x = Math.max(3, Math.min(this.W - w - 3, x)); y = Math.max(3, y);
-    this.rect(x + 1, y - 1, w - 2, h + 2, border); this.rect(x - 1, y + 1, w + 2, h - 2, border);
-    this.rect(x + 1, y, w - 2, h, bg); this.rect(x, y + 1, w, h - 2, bg);
-    const tx = Math.max(x + 5, Math.min(x + w - 9, Math.round(ax) - 2));
+    const w = Math.max(...lines.map((l) => measure(l))) + 12, h = lines.length * 10 + 8;
+    let x = Math.round(ax - w / 2 + (Math.random() - 0.5) * shake), y = Math.round(ay - h - 8 + (Math.random() - 0.5) * shake);
+    x = Math.max(4, Math.min(this.W - w - 4, x)); y = Math.max(4, y);
+    this.rect(x + 3, y + 3, w, h, 'rgba(4,3,14,0.4)');
+    this.rect(x + 2, y - 1, w - 4, h + 2, border); this.rect(x - 1, y + 2, w + 2, h - 4, border); this.rect(x, y, w, h, border);
+    this.rect(x + 2, y, w - 4, h, bg); this.rect(x, y + 2, w, h - 4, bg); this.rect(x + 1, y + 1, w - 2, h - 2, bg);
+    this.rect(x + 2, y + h - 2, w - 4, 1, 'rgba(0,0,0,0.12)');
+    const tx = Math.max(x + 6, Math.min(x + w - 10, Math.round(ax) - 2));
     for (let i = 0; i < 4; i++) { this.rect(tx + i - 1, y + h + i, 8 - i * 2, 1, border); this.rect(tx + i, y + h + i - 1, 6 - i * 2, 1, bg); }
-    lines.forEach((l, i) => this.text(l, x + w / 2, y + 8 + i * 10, { color, outline: null }));
+    lines.forEach((l, i) => this.text(l, x + w / 2, y + 9 + i * 10, { color, outline: null }));
   }
 
-  keycap(label, x, y, on = true) {
-    const w = measure(label) + 6;
-    this.rect(x, y + 1, w, 11, INK); this.rect(x + 1, y, w - 2, 13, INK);
-    this.rect(x + 1, y + 1, w - 2, 9, on ? '#e8e2d0' : '#6a6578'); this.rect(x + 1, y + 10, w - 2, 2, on ? '#a39d8a' : '#45415a');
-    this.text(label, x + w / 2, y + 5.5, { color: INK, outline: null });
+  // tecla con relieve; down la hunde un píxel
+  keycap(label, x, y, on = true, down = false) {
+    const w = measure(label) + 8, d = down ? 1 : 0; x = Math.round(x); y = Math.round(y);
+    this.rect(x + 1, y, w - 2, 14, INK); this.rect(x, y + 1, w, 12, INK);
+    this.rect(x + 1, y + 11, w - 2, 2, on ? '#8f876c' : '#3a3650');
+    this.rect(x + 1, y + 1 + d, w - 2, 10, on ? '#f4eedc' : '#6f6a84'); this.rect(x + 2, y + 1 + d, w - 4, 1, on ? '#ffffff' : '#8f8aa6'); this.rect(x + 1, y + 10 + d, w - 2, 1, on ? '#cfc7ac' : '#55506a');
+    this.text(label, x + w / 2, y + 6 + d, { color: on ? '#2a2540' : '#2a2540', outline: null });
     return w;
   }
 
@@ -123,29 +189,43 @@ export class Hud {
     const rows = [1, 1, 3, 5, 5, 5, 3];
     x = Math.round(x); y = Math.round(y);
     rows.forEach((w, i) => this.rect(x - (w + 2 >> 1), y + i - 1, w + 2, 3, INK));
-    rows.forEach((w, i) => this.rect(x - (w >> 1), y + i, w, 1, dim ? '#4a4660' : color));
-    if (!dim) this.rect(x - 1, y + 4, 1, 1, '#fff6d6');
+    rows.forEach((w, i) => this.rect(x - (w >> 1), y + i, w, 1, dim ? '#3d3760' : color));
+    if (!dim) { this.rect(x - 1, y + 4, 1, 1, '#fff6d6'); this.rect(x + 1, y + 5, 1, 1, '#c98a00'); }
   }
 
-  // botella que se llena con el progreso de la noche
-  bottle(x, y, k, t) {
-    this.rect(x + 3, y, 4, 4, INK); this.rect(x, y + 3, 10, 16, INK);
-    this.rect(x + 4, y + 1, 2, 3, '#2d6a4f'); this.rect(x + 1, y + 4, 8, 14, '#2a2540');
-    const fill = Math.round(14 * Math.max(0, Math.min(1, k)));
-    if (fill > 0) {
-      this.rect(x + 1, y + 18 - fill, 8, fill, '#f2b705');
-      this.rect(x + 1 + (Math.floor(t * 4) % 2 ? 0 : 4), y + 18 - fill, 4, 1, '#ffe98a');
-    }
-    this.rect(x + 2, y + 6, 1, 8, 'rgba(255,255,255,0.35)');
-  }
-
-  roach(x, y, on = true) {
+  // hueco redondo para una gota cargada
+  socket(x, y, full, t = 0) {
     x = Math.round(x); y = Math.round(y);
-    this.rect(x, y + 1, 10, 5, INK); this.rect(x + 1, y, 8, 7, INK);
-    this.rect(x + 1, y + 2, 8, 3, on ? '#a04c1a' : '#3d3850'); this.rect(x + 2, y + 1, 6, 5, on ? '#a04c1a' : '#3d3850');
-    this.rect(x + 2, y + 2, 4, 3, on ? '#5e230b' : '#2f2b40');
-    this.rect(x + 7, y + 1, 2, 2, on ? '#d00000' : '#55506a');
-    if (on) this.rect(x + 8, y + 4, 1, 1, '#fff');
+    this.rect(x + 2, y, 7, 11, INK); this.rect(x, y + 2, 11, 7, INK); this.rect(x + 1, y + 1, 9, 9, INK);
+    this.rect(x + 2, y + 1, 7, 9, '#0f0b26'); this.rect(x + 1, y + 2, 9, 7, '#0f0b26'); this.rect(x + 2, y + 9, 7, 1, '#2f2766');
+    if (full) this.drop(x + 5, y + 2 + (Math.sin(t * 5 + x) > 0.6 ? -1 : 0));
+  }
+
+  // botella que se llena con el zit robado
+  bottle(x, y, k, t) {
+    x = Math.round(x); y = Math.round(y);
+    this.rect(x + 4, y, 6, 6, INK); this.rect(x + 1, y + 5, 12, 21, INK); this.rect(x, y + 7, 14, 17, INK);
+    this.rect(x + 5, y + 1, 4, 2, '#8a5a2b'); this.rect(x + 5, y + 3, 4, 3, '#3f8f68');             // corcho y cuello
+    this.rect(x + 2, y + 6, 10, 19, '#143d2e'); this.rect(x + 1, y + 8, 12, 15, '#143d2e');
+    const fill = Math.round(17 * Math.max(0, Math.min(1, k)));
+    if (fill > 0) {
+      const top = y + 24 - fill;
+      this.rect(x + 2, top, 10, fill, '#f2b705'); if (fill > 2) this.rect(x + 1, Math.max(top, y + 8), 12, Math.min(fill, y + 23 - Math.max(top, y + 8)), '#f2b705');
+      this.rect(x + 2 + (Math.floor(t * 4) % 2 ? 0 : 5), top, 5, 1, '#ffe98a'); this.rect(x + 9, top + 2, 2, Math.max(0, fill - 3), '#c98a00');
+      if (fill > 6) this.rect(x + 4 + Math.floor(t * 3) % 5, top + 3 + Math.floor(t * 7) % (fill - 4), 1, 1, '#fff6d6');
+    }
+    this.rect(x + 3, y + 9, 1, 11, 'rgba(255,255,255,0.45)'); this.rect(x + 2, y + 6, 10, 1, '#3f8f68');
+  }
+
+  wing(x, y, on) {
+    this.icon('wing', x, y, on ? '#7dd3fc' : '#3d3760'); if (on) { this.rect(x + 2, y + 1, 4, 1, '#e0f6ff'); }
+  }
+
+  // medidor de ruido: altavoz y de 0 a 3 barras
+  noise(x, y, level) {
+    x = Math.round(x); y = Math.round(y);
+    this.rect(x - 1, y + 2, 4, 6, INK); this.rect(x + 2, y, 4, 10, INK); this.rect(x, y + 3, 2, 4, CREAM); this.rect(x + 3, y + 1, 2, 8, CREAM);
+    for (let i = 0; i < 3; i++) { const h = 4 + i * 3, c = i < level ? (level >= 3 ? '#ff5a5a' : level === 2 ? '#ffb347' : '#9be7a0') : '#3d3760'; this.rect(x + 7 + i * 4, y + 9 - h, 4, h + 2, INK); this.rect(x + 8 + i * 4, y + 10 - h, 2, h, c); }
   }
 
   // ojo de detección: k = 0 cerrado … 1 abierto del todo
@@ -154,7 +234,7 @@ export class Hud {
     const h = k < 0.15 ? 1 : k < 0.55 ? 3 : 5, c = hunt ? '#ff3b3b' : k > 0.55 ? '#ffb347' : '#fdf6e3';
     this.rect(x - 6, y - (h >> 1) - 1, 12, h + 2, INK); this.rect(x - 7, y - 1, 14, 3, INK);
     this.rect(x - 5, y - (h >> 1), 10, h, c); this.rect(x - 6, y, 12, 1, c);
-    if (h > 1) this.rect(x - 1, y - 1, 3, 3, INK);
+    if (h > 1) { this.rect(x - 1, y - 1, 3, 3, INK); this.rect(x, y - 1, 1, 1, '#ffffff'); }
   }
 
   arrow(cx, cy, ang, color, size = 5) {
@@ -168,6 +248,20 @@ export class Hud {
     }
   }
 
+  // la noche de un vistazo: cielo que va de la madrugada al amanecer, con la luna avanzando hacia el sol
+  skybar(x, y, w, k, t) {
+    x = Math.round(x); y = Math.round(y); const h = 9;
+    this.rect(x - 2, y - 2, w + 4, h + 4, INK); this.rect(x - 1, y - 1, w + 2, h + 2, BR); this.rect(x - 1, y - 1, w + 2, 1, BR_HI); this.rect(x - 1, y + h, w + 2, 1, BR_LO);
+    const cols = ['#0d0b2e', '#1a1048', '#2e1660', '#4f1f70', '#7d2f72', '#c4526a', '#ff9a5a', '#ffd27a'];
+    for (let i = 0; i < w; i++) { const q = i / w * (cols.length - 1), a = Math.floor(q), next = q - a > ((i * 7) % 5) / 5; this.rect(x + i, y, 1, h, cols[Math.min(cols.length - 1, a + (next ? 1 : 0))]); }
+    for (const [sx, sy] of [[0.06, 2], [0.14, 5], [0.24, 1], [0.33, 6], [0.43, 3], [0.52, 6]]) if (Math.sin(t * 2 + sx * 40) > -0.5) this.rect(x + Math.round(sx * w), y + sy, 1, 1, '#ffffff');
+    for (let i = 0; i < w; i += 5) this.rect(x + i, y + h - 2 - ((i * 13) % 3), 4, 3 + ((i * 13) % 3), '#0b0b12');     // tejados
+    const sx = x + w - 7; this.rect(sx, y + 3, 7, 4, '#fff6d6'); this.rect(sx + 1, y + 2, 5, 1, '#fff6d6'); this.rect(sx + 2, y + 1, 3, 1, '#ffe98a'); // sol asomando
+    this.rect(x, y, Math.round(w * k), h, 'rgba(255,255,255,0.08)');
+    const mx = x + Math.round((w - 9) * Math.max(0, Math.min(1, k)));
+    this.rect(mx - 1, y - 3, 9, 9, INK); this.rect(mx, y - 2, 7, 7, '#e9edff'); this.rect(mx + 3, y - 2, 4, 4, INK); this.rect(mx + 1, y + 2, 2, 2, '#c9d0f2');
+  }
+
   // cortinilla de iris: todo negro menos un círculo de radio r
   iris(cx, cy, r) {
     const { W, H, g } = this; g.fillStyle = INK; cx = Math.round(cx);
@@ -177,11 +271,5 @@ export class Hud {
       const dx = Math.round(Math.sqrt(r * r - dy * dy));
       g.fillRect(0, y, Math.max(0, cx - dx), 1); g.fillRect(cx + dx, y, Math.max(0, W - cx - dx), 1);
     }
-  }
-
-  moon(x, y) { this.rect(x - 1, y - 1, 7, 7, INK); this.rect(x, y, 5, 5, '#e6ecff'); this.rect(x + 2, y, 3, 3, INK); }
-  sun(x, y, t) {
-    const c = Math.floor(t * 3) % 2 ? '#ffd23f' : '#ffb347';
-    this.rect(x - 1, y - 1, 7, 7, INK); this.rect(x, y, 5, 5, c); this.rect(x + 2, y - 2, 1, 1, c); this.rect(x + 2, y + 6, 1, 1, c); this.rect(x - 2, y + 2, 1, 1, c); this.rect(x + 6, y + 2, 1, 1, c);
   }
 }

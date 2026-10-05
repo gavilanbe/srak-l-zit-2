@@ -270,108 +270,268 @@ export function drawLogo(g, cx, cy, W, t, appear = 99) {
 }
 
 // ---------- plano de la casa ----------
-const ROOMS = [
-  { name: 'COCINA', bg: '#c9a877', floor: '#8a6a4a' }, { name: 'SALÓN', bg: '#93402f', floor: '#5e2a22' },
-  { name: 'PATIO', bg: '#16224a', floor: '#2d6a4f' }, { name: 'HANOUT', bg: '#a9b8a2', floor: '#77756a' },
-];
-
-function roomArt(hud, i, x, y, w, h, t) {
-  const r = (a, b, c, d, col) => hud.rect(x + a, y + b, c, d, col), fy = h - 10;
-  r(0, 0, w, h, ROOMS[i].bg); r(0, fy, w, 10, ROOMS[i].floor);
-  if (i === 0) { // mesa con tajín, nevera y butano
-    r(12, 8, 16, fy - 8, '#e4e4dc'); r(12, 22, 16, 1, '#9a9a94'); r(40, fy - 16, 44, 3, '#6b3f1d'); r(43, fy - 13, 3, 13, '#6b3f1d'); r(78, fy - 13, 3, 13, '#6b3f1d');
-    r(54, fy - 20, 12, 4, '#b5562b'); r(57, fy - 24, 6, 4, '#c4622d'); r(59, fy - 26, 2, 2, '#c4622d'); r(96, fy - 14, 10, 14, '#2f6fd0'); r(99, fy - 17, 4, 3, '#c8c8c8');
-  } else if (i === 1) { // sofá, jeddi y la tele
-    r(8, fy - 12, 50, 12, '#1d6f73'); r(8, fy - 20, 50, 8, '#e9c46a'); r(26, fy - 26, 8, 14, '#efe9d8'); r(27, fy - 31, 6, 5, '#c68a5b'); r(27, fy - 34, 6, 3, '#c1121f');
-    r(80, fy - 10, 30, 10, '#3b2a1a'); r(82, fy - 28, 26, 17, '#15151c'); r(84, fy - 26, 22, 13, Math.floor(t * 6) % 2 ? '#7fb2ff' : '#9cc4ff');
-    hud.text('z', x + 40, y + fy - 34 - (Math.floor(t * 2) % 3), { color: '#fdf6e3', outline: null });
-  } else if (i === 2) { // fuente, naranjo y gallina, a cielo abierto
-    for (const [sx, sy] of [[10, 8], [40, 14], [70, 6], [100, 12], [58, 22]]) if (Math.sin(t * 2 + sx) > -0.4) r(sx, sy, 1, 1, '#fdf6e3');
-    r(46, fy - 6, 34, 6, '#d9d2bd'); r(49, fy - 8, 28, 2, '#3fa7d6'); r(61, fy - 16, 4, 10, '#d9d2bd'); r(57, fy - 18, 12, 2, '#d9d2bd');
-    r(98, fy - 22, 3, 22, '#5e3b1e'); r(89, fy - 36, 21, 16, '#2d6a4f'); r(93, fy - 30, 2, 2, '#ff9f1c'); r(103, fy - 26, 2, 2, '#ff9f1c'); r(99, fy - 34, 2, 2, '#ff9f1c');
-    r(18, fy - 7, 8, 6, '#f6f1e4'); r(24, fy - 11, 4, 5, '#f6f1e4'); r(25, fy - 13, 2, 2, '#d62828'); r(28, fy - 9, 2, 1, '#f4a20d'); r(20, fy - 1, 1, 1, '#f4a20d'); r(23, fy - 1, 1, 1, '#f4a20d');
-  } else { // estanterías, bidones y toldo
-    for (let k = 0; k < 4; k++) r(0, k * 6, w, 3, k % 2 ? '#f1faee' : '#c1121f');
-    for (let s = 0; s < 3; s++) { r(8, 28 + s * 9, 62, 2, '#4a2f18'); for (let p = 0; p < 12; p++) r(10 + p * 5, 23 + s * 9 + (p * 7 + s * 3) % 3, 3, 5 - (p * 7 + s * 3) % 3, ['#d62828', '#f4c20d', '#2a9d8f', '#2b5fa8', '#e76f51'][(p + s * 2) % 5]); }
-    r(82, fy - 22, 14, 22, '#2f6fd0'); r(100, fy - 22, 14, 22, '#2f6fd0'); r(82, fy - 16, 14, 2, '#1d3557'); r(100, fy - 16, 14, 2, '#1d3557'); r(96, fy - 4, 4, 4, '#f2b705');
-  }
-}
-
+// La casa en corte: fachada, azotea, calle y cuatro interiores dibujados con sombreado y tramado.
+// Lo que no se mueve se pinta una vez en un lienzo; personajes, luces y agua van encima cada fotograma.
 const STORY = [
   'Una casa cualquiera de la medina. En un agujero de la cocina vive una familia.',
   'En la cocina ya no queda ni gota. Por la grieta, al salón.',
   'Jeddi se ha quedado sin argán. Tubería abajo, al patio.',
   'Queda el premio gordo: la tienda de Si Brahim, a pie de calle.',
 ];
-const THREATS = ['la jadda · Mchicha', 'jeddi · Mchicha', 'las gallinas · la jadda', 'Si Brahim · los cepos'];
+const THREATS = ['la jadda', 'jeddi · Mchicha', 'las gallinas · la jadda', 'Si Brahim · los cepos'];
+const ROOM_NAMES = ['COCINA', 'SALÓN', 'PATIO', 'HANOUT'];
+const K = '#0b0b12', RH = 72, WALL = 8, FY = 61; // alto de habitación, grosor de muro y altura del suelo
 
-function sprite(hud, x, y, robe, head, top) { // personajillo de 6x12
-  hud.rect(x, y + 5, 6, 8, robe); hud.rect(x + 1, y + 1, 4, 4, head); hud.rect(x + 1, y, 4, 2, top);
+function tools(hud) {
+  const R = (x, y, w, h, c) => hud.rect(x, y, w, h, c);
+  const T = {
+    R,
+    box(x, y, w, h, base, hi, sh) { R(x - 1, y - 1, w + 2, h + 2, K); R(x, y, w, h, base); R(x, y, w, 1, hi); R(x, y, 1, h, hi); R(x, y + h - 1, w, 1, sh); R(x + w - 1, y, 1, h, sh); },
+    dith(x, y, w, h, c, odd = 0) { for (let j = 0; j < h; j++) for (let i = (j + odd) & 1; i < w; i += 2) R(x + i, y + j, 1, 1, c); },
+    grad(x, y, w, h, cols) { // bandas con una fila tramada entre cada dos
+      const bh = h / cols.length;
+      cols.forEach((c, i) => { const y0 = Math.round(y + i * bh), y1 = Math.round(y + (i + 1) * bh); R(x, y0, w, y1 - y0, c); if (i) T.dith(x, y0 - 2, w, 2, c); });
+    },
+    disc(cx, cy, r, c) { for (let dy = -r; dy <= r; dy++) { const dx = Math.round(Math.sqrt(r * r - dy * dy)); R(cx - dx, cy + dy, dx * 2 + 1, 1, c); } },
+    arch(x, y, w, h, c) { const r = w >> 1; for (let dy = 0; dy <= r; dy++) { const dx = Math.round(Math.sqrt(r * r - (r - dy) * (r - dy))); R(x + r - dx, y + dy, dx * 2 + (w & 1), 1, c); } R(x, y + r, w, h - r, c); },
+    glow(cx, cy, r, c) { for (let dy = -r; dy <= r; dy++) { const dx = Math.round(Math.sqrt(r * r - dy * dy)); T.dith(cx - dx, cy + dy, dx * 2 + 1, 1, c, dy & 1); } },
+    bricks(x, y, w, h) {
+      R(x, y, w, h, '#7a4a2c');
+      for (let j = 0, row = 0; j < h; j += 4, row++) {
+        R(x, y + j + 3, w, 1, '#4e2c1a');
+        for (let i = (row % 2) * 5; i < w; i += 10) { R(x + i, y + j, 1, Math.min(3, h - j), '#4e2c1a'); if (i + 2 < w) R(x + i + 1, y + j, Math.min(7, w - i - 2), 1, '#96603a'); }
+      }
+    },
+    zellige(x, y, w, h, a, b, dot) { for (let i = 0; i < w; i += 6) { R(x + i, y, Math.min(6, w - i), h, (i / 6) % 2 ? a : b); if (i + 3 < w) { R(x + i + 2, y + (h >> 1) - 1, 2, 2, dot); } } R(x, y, w, 1, K); R(x, y + 1, w, 1, '#ffffff55'); },
+    floor(x, y, w, a, b, hi) { R(x, y, w, RH - FY, a); for (let i = 0; i < w; i += 12) { R(x + i, y + 1, Math.min(6, w - i), 4, b); if (i + 6 < w) R(x + i + 6, y + 6, Math.min(6, w - i - 6), 5, b); } R(x, y, w, 1, hi); },
+    jar(x, y, c, hi, sh) { T.disc(x + 5, y + 8, 6, K); R(x + 2, y - 1, 7, 4, K); T.disc(x + 5, y + 8, 5, c); R(x + 3, y, 5, 3, c); R(x + 2, y - 1, 7, 1, sh); R(x + 2, y + 5, 2, 5, hi); R(x + 8, y + 6, 2, 6, sh); },
+  };
+  return T;
 }
 
-// La casa en corte, dibujada en un lienzo aparte para poder acercar la cámara a una habitación.
-let mapHud = null;
-function drawHouse(hud, t, from, to, k) {
-  const { W, H } = hud, cx = W / 2;
-  hud.clear();
-  const rw = Math.min(126, (W - 40) / 2 | 0), rh = 56, wall = 5, x0 = Math.round(cx - rw - wall * 1.5), y0 = Math.round(H / 2 - rh - wall * 1.5) + 4;
-  const hw = rw * 2 + wall * 3, hh = rh * 2 + wall * 3, gy = y0 + hh;
-  // calle, palmera y farola
-  hud.rect(0, gy, W, H - gy, '#0d0a1e'); hud.rect(0, gy, W, 2, '#2a1f45');
-  const palm = x0 - 26; for (let y = gy - 46; y < gy; y++) hud.rect(palm + Math.round(Math.sin((y - gy) * 0.05) * 2), y, 2, 1, '#1c1040');
-  for (let a = 0; a < 7; a++) { const ang = -2.9 + a * 0.45; for (let d = 0; d < 13; d++) hud.rect(palm + Math.cos(ang) * d, gy - 46 + Math.sin(ang) * d * 0.6 + d * d * 0.03, 2, 1, '#1c1040'); }
-  const lx = x0 + hw + 16; hud.rect(lx, gy - 34, 2, 34, '#1c1040'); hud.rect(lx - 3, gy - 38, 8, 5, '#1c1040'); hud.rect(lx - 2, gy - 37, 6, 3, Math.sin(t * 9) > -0.8 ? '#ffd27a' : '#b9793f');
-  hud.rect(lx - 9, gy - 30, 20, 30, 'rgba(255,210,122,0.06)');
-  // fachada, azotea y tejadillo del hanout
-  hud.rect(x0 - 3, y0 - 3, hw + 6, hh + 3, '#0b0b12'); hud.rect(x0, y0, hw, hh, '#4a2f1c');
-  for (let x = x0 - 3; x < x0 + hw + 3; x += 8) hud.rect(x, y0 - 8, 5, 5, '#4a2f1c');
-  hud.rect(x0 + 14, y0 - 20, 1, 12, '#2a1a10'); hud.rect(x0 + 11, y0 - 18, 7, 1, '#2a1a10'); // antena
-  hud.rect(x0 + hw - 40, y0 - 18, 1, 10, '#2a1a10'); hud.rect(x0 + hw - 12, y0 - 18, 1, 10, '#2a1a10');
-  for (let d = 0; d <= 28; d++) hud.rect(x0 + hw - 40 + d, y0 - 18 + Math.sin(d / 28 * Math.PI) * 3, 1, 1, '#2a1a10');
-  for (const [d, c] of [[5, '#8f1d2c'], [12, '#1d6f73'], [19, '#e9c46a']]) hud.rect(x0 + hw - 40 + d, y0 - 16 + Math.sin(t * 2 + d) * 0.6, 4, 6, c);
-  const pos = (i) => ({ x: x0 + wall + (i % 2) * (rw + wall), y: y0 + wall + (i >> 1) * (rh + wall) });
-  const ctr = (i) => { const p = pos(i); return { x: p.x + rw / 2, y: p.y + rh - 16 }; };
-  const looped = from !== null && from > to;
-  ROOMS.forEach((room, i) => {
-    const p = pos(i), seen = i <= to || looped;
-    roomArt(hud, i, p.x, p.y, rw, rh, t);
-    const fy = p.y + rh - 10, walk = Math.round(Math.sin(t * 0.9 + i) * 14);
-    if (i === 0) sprite(hud, p.x + 62 + walk, fy - 13, '#7d3c98', '#c68a5b', '#d62828');
-    if (i === 3) sprite(hud, p.x + 34 + walk, fy - 13, '#2b5fa8', '#c68a5b', '#f4f1ea');
-    if (i !== to) hud.rect(p.x, p.y, rw, rh, seen ? 'rgba(8,6,20,0.45)' : 'rgba(8,6,20,0.9)');
-    if (!seen) hud.text('?', p.x + rw / 2, p.y + rh / 2, { scale: 2, color: '#6a6f9a' });
-    else hud.text(room.name, p.x + 4, p.y + 7, { align: 'left', color: i === to ? '#ffd23f' : '#fdf6e3' });
-    if (seen && i < to && !looped) { hud.rect(p.x + rw - 46, p.y + 3, 43, 11, '#0b0b12'); hud.rect(p.x + rw - 45, p.y + 4, 41, 9, '#ffd23f'); hud.text('ROBADO', p.x + rw - 24, p.y + 9, { color: '#5a0a10', outline: null }); }
+// personajillo de pie, 12x22: túnica, cabeza y tocado
+function person(R, x, y, robe, shade, top, extra) {
+  x = Math.round(x); y = Math.round(y);
+  R(x, y + 7, 12, 15, K); R(x + 1, y - 1, 10, 9, K);
+  R(x + 1, y + 8, 10, 13, robe); R(x + 8, y + 8, 3, 13, shade); R(x + 1, y + 19, 10, 1, '#e9c46a');
+  R(x + 3, y + 2, 6, 6, '#c68a5b'); R(x + 7, y + 4, 1, 1, K); R(x + 3, y + 6, 6, 1, '#a86d44');
+  if (top === 'scarf') { R(x + 2, y, 8, 3, '#d62828'); R(x + 2, y + 3, 2, 4, '#d62828'); R(x + 3, y, 5, 1, '#ff6b6b'); }
+  if (top === 'fez') { R(x + 3, y - 1, 6, 3, '#c1121f'); R(x + 3, y + 5, 6, 3, '#f4f1ea'); }
+  if (top === 'cap') { R(x + 2, y, 8, 2, '#f4f1ea'); R(x + 5, y + 6, 4, 1, K); }
+  if (extra === 'belgha') { R(x + 10, y + 5, 5, 4, K); R(x + 11, y + 6, 3, 2, '#f4c20d'); R(x + 10, y + 9, 2, 5, robe); }
+  if (extra === 'broom') { R(x + 12, y + 2, 1, 19, '#8a5a2b'); R(x + 11, y + 18, 3, 4, '#e9c46a'); }
+}
+
+function chicken(R, x, y, peck) {
+  x = Math.round(x); y = Math.round(y);
+  const hy = peck ? 4 : 0, hx = peck ? 2 : 0;
+  R(x - 1, y + 2, 9, 7, K); R(x, y + 3, 7, 5, '#f6f1e4'); R(x, y + 2, 2, 2, '#f6f1e4'); R(x + 1, y + 6, 5, 1, '#d9d2bd');
+  R(x + 5 + hx, y - 2 + hy, 5, 6, K); R(x + 6 + hx, y - 1 + hy, 3, 4, '#f6f1e4'); R(x + 6 + hx, y - 2 + hy, 2, 1, '#d62828'); R(x + 9 + hx, y + hy + 1, 2, 1, '#f4a20d'); R(x + 8 + hx, y + hy, 1, 1, K);
+  R(x + 2, y + 8, 1, 2, '#f4a20d'); R(x + 4, y + 8, 1, 2, '#f4a20d');
+}
+
+const ROOM_PAINT = [
+  // ---- cocina ----
+  (T, x, y, rw) => {
+    const { R, box } = T, fy = y + FY;
+    T.grad(x, y, rw, FY, ['#f3ddb0', '#e9cc96', '#dcb97d']);
+    T.zellige(x, fy - 15, rw, 15, '#1f7a5c', '#e9d8a6', '#1d3557');
+    T.floor(x, fy, rw, '#b98a58', '#d4a874', '#f1d6a3');
+    R(x, fy - 10, 9, 10, K); T.arch(x, fy - 11, 8, 11, '#1a0c06'); R(x, fy - 9, 2, 9, '#ffb347'); R(x + 2, fy - 7, 1, 7, '#b9793f'); // el agujero
+    box(x + 18, fy - 46, 22, 46, '#e9e9e2', '#ffffff', '#b4b4aa'); R(x + 18, fy - 31, 22, 1, '#9a9a94'); R(x + 36, fy - 41, 2, 7, '#8a8a84'); R(x + 36, fy - 27, 2, 10, '#8a8a84');
+    R(x + 22, fy - 42, 3, 3, '#d62828'); R(x + 27, fy - 39, 3, 2, '#2a9d8f'); R(x + 23, fy - 24, 4, 3, '#e9c46a');
+    const wx = x + 50; // ventana con la luna
+    box(wx, y + 6, 30, 22, '#101c4a', '#1a2a66', '#0b1436'); T.disc(wx + 21, y + 14, 5, '#e9edff'); R(wx + 19, y + 12, 3, 2, '#c9d0f2'); R(wx + 5, y + 10, 1, 1, '#ffffff'); R(wx + 10, y + 20, 1, 1, '#ffffff'); R(wx + 13, y + 9, 1, 1, '#b9b6e6');
+    R(wx + 14, y + 6, 2, 22, '#6b3f1d'); R(wx, y + 16, 30, 1, '#6b3f1d'); R(wx - 2, y + 5, 34, 2, '#8a5a2b'); R(wx - 2, y + 28, 34, 2, '#6b3f1d');
+    R(wx - 2, y + 7, 4, 20, '#c1121f'); R(wx + 28, y + 7, 4, 20, '#c1121f'); R(wx - 1, y + 7, 1, 20, '#ff5a5a');
+    for (let i = 0; i < 20; i++) T.dith(wx + 4 + i, y + 30 + i, 22, 1, '#fff6d6', i & 1); // rayo de luna
+    box(x + 46, fy - 20, 54, 20, '#2a9d8f', '#4cc7b8', '#1c6f66'); box(x + 44, fy - 23, 58, 3, '#f4e6c0', '#ffffff', '#c9b88a');
+    for (let i = 0; i < 4; i++) { R(x + 59 + i * 13, fy - 19, 1, 18, '#1c6f66'); R(x + 53 + i * 13, fy - 12, 2, 3, '#e9c46a'); }
+    R(x + 52, fy - 27, 12, 4, K); R(x + 53, fy - 26, 10, 3, '#b5562b'); R(x + 55, fy - 31, 6, 5, K); R(x + 56, fy - 30, 4, 4, '#c4622d'); R(x + 57, fy - 32, 2, 2, '#c4622d'); // tajín
+    R(x + 80, fy - 30, 2, 7, '#b8bcc4'); R(x + 80, fy - 30, 6, 2, '#b8bcc4'); // grifo
+    R(x + 46, y + 36, 40, 1, '#5e3b1e'); for (const [o, c] of [[4, '#b8bcc4'], [14, '#c67a3c'], [24, '#b8bcc4']]) { R(x + 48 + o, y + 37, 1, 3, K); R(x + 46 + o, y + 40, 6, 4, c); R(x + 46 + o, y + 40, 6, 1, '#ffffff88'); }
+    box(x + 106, fy - 22, 22, 22, '#d9d9d2', '#f6f6f2', '#9a9a94'); R(x + 109, fy - 14, 16, 10, '#23262d'); R(x + 109, fy - 14, 16, 1, '#4a4f58'); R(x + 108, fy - 19, 3, 2, '#d62828'); R(x + 113, fy - 19, 3, 2, K); R(x + 118, fy - 19, 3, 2, K);
+    R(x + 110, fy - 28, 12, 6, K); R(x + 111, fy - 27, 10, 5, '#8a8f98'); R(x + 111, fy - 27, 10, 1, '#c8ccd4');
+    box(x + 134, fy - 17, 10, 17, '#2f6fd0', '#7fb0ff', '#1d4a96'); R(x + 137, fy - 21, 4, 3, K); R(x + 138, fy - 20, 2, 2, '#c8c8c8');
+    const tx = x + rw - 62; // mesa con el té
+    box(tx, fy - 18, 36, 3, '#9a6a36', '#c48f55', '#5e3b1e'); R(tx + 3, fy - 15, 3, 15, K); R(tx + 4, fy - 15, 1, 15, '#7a4f26'); R(tx + 30, fy - 15, 3, 15, K); R(tx + 31, fy - 15, 1, 15, '#7a4f26');
+    R(tx + 8, fy - 20, 20, 2, '#cfd6dc'); R(tx + 12, fy - 26, 7, 6, K); R(tx + 13, fy - 25, 5, 5, '#cfd6dc'); R(tx + 14, fy - 28, 3, 3, '#cfd6dc'); R(tx + 19, fy - 24, 3, 1, '#cfd6dc'); R(tx + 13, fy - 25, 1, 4, '#ffffff');
+    R(tx + 22, fy - 23, 2, 3, '#2a9d8f'); R(tx + 25, fy - 23, 2, 3, '#e76f51');
+    const bx = x + rw - 20; // el bidón
+    R(bx - 4, fy - 1, 22, 2, '#f2b705'); box(bx, fy - 18, 13, 18, '#d9ac12', '#ffe36e', '#9a7708'); R(bx + 2, fy - 13, 9, 8, '#2d6a4f'); R(bx + 3, fy - 11, 7, 3, '#f1faee'); R(bx + 2, fy - 21, 4, 3, K); R(bx + 3, fy - 20, 2, 2, '#2d6a4f');
+    R(x + (rw >> 1), y, 1, 9, K); R(x + (rw >> 1) - 5, y + 9, 11, 5, K); R(x + (rw >> 1) - 4, y + 10, 9, 3, '#c1440e'); R(x + (rw >> 1) - 4, y + 10, 9, 1, '#ff8a4c'); R(x + (rw >> 1) - 2, y + 13, 5, 2, '#ffe9a8'); // lámpara
+  },
+  // ---- salón ----
+  (T, x, y, rw) => {
+    const { R, box } = T, fy = y + FY, L = rw - 78;
+    T.grad(x, y, rw, FY, ['#c4664c', '#b0503e', '#983f33']);
+    T.zellige(x, fy - 13, rw, 13, '#2b5fa8', '#e9dcc0', '#e9c46a');
+    T.floor(x, fy, rw, '#6e3528', '#8a4636', '#b8664e');
+    R(x + 22, fy + 2, rw - 60, 8, '#1d3557'); R(x + 22, fy + 2, rw - 60, 1, '#e9c46a'); R(x + 22, fy + 9, rw - 60, 1, '#e9c46a'); for (let i = 28; i < rw - 44; i += 10) { R(x + i, fy + 5, 4, 2, '#e9c46a'); R(x + i + 1, fy + 4, 2, 4, '#8f1d2c'); } // alfombra
+    box(x + 12, fy - 25, L, 13, '#e9c46a', '#fff3b0', '#b8963a'); for (let i = 0; i < L; i += 18) R(x + 12 + i, fy - 25, 1, 13, '#b8963a');
+    box(x + 10, fy - 13, L + 4, 10, '#1d7a80', '#35aab0', '#124a4d'); R(x + 12, fy - 3, 3, 3, K); R(x + L + 8, fy - 3, 3, 3, K);
+    for (const o of [8, L - 22]) { box(x + 12 + o, fy - 19, 10, 7, '#c1440e', '#ff7a45', '#8a2f0a'); R(x + 16 + o, fy - 16, 2, 2, '#e9c46a'); }
+    box(x + 22, y + 8, 16, 18, '#3b2a1a', '#6b4a2e', '#1f150c'); R(x + 24, y + 10, 12, 14, '#e9dcc0'); R(x + 28, y + 12, 4, 9, '#2b5fa8'); R(x + 26, y + 15, 8, 3, '#2b5fa8'); R(x + 29, y + 16, 2, 2, '#e9c46a'); // cuadro: jamsa
+    const lx = x + (rw >> 1) + 6; R(lx, y, 1, 8, K); T.glow(lx, y + 14, 12, '#ffd27a'); R(lx - 4, y + 8, 9, 11, K); R(lx - 3, y + 9, 7, 9, '#d4a017'); R(lx - 2, y + 11, 2, 5, '#ff6b6b'); R(lx + 1, y + 11, 2, 5, '#7dd3fc'); R(lx - 1, y + 6, 3, 3, '#d4a017'); R(lx - 2, y + 19, 5, 2, '#d4a017'); // farol
+    const tx = x + L + 22; R(tx - 9, fy - 9, 19, 3, K); R(tx - 8, fy - 8, 17, 2, '#d4a017'); R(tx - 8, fy - 8, 17, 1, '#ffe98a'); R(tx - 1, fy - 6, 3, 6, '#6b4a16'); R(tx - 4, fy - 1, 9, 1, '#6b4a16'); // mesita
+    R(tx - 3, fy - 15, 7, 6, K); R(tx - 2, fy - 14, 5, 5, '#cfd6dc'); R(tx - 1, fy - 17, 3, 3, '#cfd6dc'); R(tx - 2, fy - 14, 1, 4, '#ffffff');
+    box(x + rw - 50, fy - 14, 40, 14, '#3b2a1a', '#6b4a2e', '#1f150c'); R(x + rw - 46, fy - 9, 14, 5, '#2a1c10'); R(x + rw - 28, fy - 9, 14, 5, '#2a1c10');
+    box(x + rw - 46, fy - 38, 32, 23, '#15151c', '#3a3a48', '#000000'); R(x + rw - 32, fy - 15, 6, 2, '#15151c');
+    T.jar(x + rw - 12, fy - 15, '#c98a3a', '#f0b868', '#8a5a1c'); R(x + rw - 14, fy - 1, 14, 2, '#f2b705');
+  },
+  // ---- patio ----
+  (T, x, y, rw) => {
+    const { R, box } = T, fy = y + FY, cx = x + (rw >> 1);
+    T.grad(x, y, rw, 30, ['#0c1438', '#14224f', '#1d3168']);
+    for (const [sx, sy] of [[10, 6], [34, 14], [62, 5], [88, 17], [120, 8], [150, 13], [22, 20], [104, 4]]) if (sx < rw - 4) R(x + sx, y + sy, 1, 1, sx % 3 ? '#ffffff' : '#b9b6e6');
+    T.disc(x + rw - 26, y + 12, 6, '#e9edff'); T.disc(x + rw - 23, y + 10, 5, '#14224f'); // luna creciente
+    R(x, y + 24, rw, FY - 24, '#efe4cc'); T.dith(x, y + 44, rw, FY - 44, '#d9c9a3'); R(x, y + 24, rw, 1, K);
+    for (let i = 0; i < rw; i += 8) R(x + i, y + 21, 5, 3, '#efe4cc'); T.zellige(x, y + 27, rw, 5, '#2b5fa8', '#f1faee', '#1f7a5c');
+    const n = Math.max(3, Math.floor(rw / 44)), gap = rw / n;
+    for (let i = 0; i < n; i++) { const ax = Math.round(x + i * gap + gap / 2 - 13); T.arch(ax - 1, y + 34, 28, FY - 34, K); T.arch(ax, y + 35, 26, FY - 35, '#22335f'); T.dith(ax, y + 46, 26, FY - 46, '#16224a'); R(ax - 3, y + 46, 3, FY - 46, '#d9c9a3'); R(ax + 26, y + 46, 3, FY - 46, '#c4b48c'); R(ax - 4, y + 44, 5, 2, '#fff8e6'); R(ax + 25, y + 44, 5, 2, '#fff8e6'); }
+    T.floor(x, fy, rw, '#1f6a50', '#2f8a6a', '#7fc9a8');
+    box(cx - 22, fy - 7, 44, 7, '#d9d2bd', '#ffffff', '#a39c86'); R(cx - 20, fy - 7, 40, 2, '#3fa7d6'); R(cx - 3, fy - 19, 6, 12, K); R(cx - 2, fy - 19, 4, 12, '#d9d2bd'); R(cx - 2, fy - 19, 1, 12, '#ffffff');
+    R(cx - 10, fy - 22, 20, 4, K); R(cx - 9, fy - 21, 18, 2, '#d9d2bd'); R(cx - 8, fy - 22, 16, 1, '#3fa7d6');
+    const tx = x + rw - 44; // naranjo
+    box(tx - 6, fy - 9, 13, 9, '#b5562b', '#e07a45', '#7a3414'); R(tx - 1, fy - 26, 3, 17, K); R(tx, fy - 26, 1, 17, '#7a4f26');
+    for (const [dx, dy, r] of [[0, -36, 10], [-9, -30, 7], [9, -30, 7]]) T.disc(tx + dx, fy + dy, r + 1, K);
+    for (const [dx, dy, r, c] of [[0, -36, 10, '#2d6a4f'], [-9, -30, 7, '#2d6a4f'], [9, -30, 7, '#245a42'], [-3, -39, 5, '#3f8f68']]) T.disc(tx + dx, fy + dy, r, c);
+    for (const [dx, dy] of [[-6, -34], [4, -40], [8, -29], [-11, -27], [1, -30]]) { R(tx + dx, fy + dy, 3, 3, '#ff9f1c'); R(tx + dx, fy + dy, 1, 1, '#ffd27a'); }
+    T.jar(x + rw - 14, fy - 15, '#b5562b', '#e07a45', '#7a3414'); R(x + rw - 18, fy - 1, 16, 2, '#f2b705');
+    T.glow(x + 16, fy - 8, 9, '#ffd27a'); R(x + 13, fy - 12, 7, 12, K); R(x + 14, fy - 11, 5, 10, '#d4a017'); R(x + 15, fy - 9, 3, 6, '#ffe9a8'); R(x + 15, fy - 14, 3, 2, '#d4a017'); // farol
+  },
+  // ---- hanout ----
+  (T, x, y, rw) => {
+    const { R, box } = T, fy = y + FY, r = rng(5), cols = ['#d62828', '#f4c20d', '#2a9d8f', '#e76f51', '#f1faee', '#2b5fa8', '#6a994e', '#e9c46a', '#c1440e'];
+    T.grad(x, y, rw, FY, ['#d9e4cf', '#c6d4bc', '#b1c2a6']);
+    T.floor(x, fy, rw, '#8a8578', '#d8d2c0', '#f4efe0');
+    const sw = rw - 62;
+    box(x + 6, y + 6, sw, 40, '#5e3b1e', '#8a5a2b', '#3b2412');
+    for (let s = 0; s < 3; s++) { // estantes con género
+      const sy = y + 8 + s * 13; R(x + 7, sy + 11, sw - 2, 2, '#8a5a2b'); R(x + 7, sy + 11, sw - 2, 1, '#b07a40');
+      for (let i = 2; i < sw - 6;) { const pw = 3 + (r() * 4 | 0), ph = 5 + (r() * 6 | 0), c = cols[r() * cols.length | 0]; R(x + 7 + i, sy + 11 - ph, pw, ph, c); R(x + 7 + i, sy + 11 - ph, 1, ph, '#ffffff66'); if (pw > 3) R(x + 8 + i, sy + 13 - ph, pw - 2, 2, '#ffffffaa'); i += pw + 1; }
+    }
+    for (let i = 10; i < rw - 8; i += 7) { R(x + i, y + 2 + Math.round(Math.sin(i * 0.25) * 1.5), 2, 3, i % 3 ? '#f1ede0' : '#8f1d2c'); } R(x, y + 1, rw, 1, '#5e3b1e'); // ristras
+    box(x + 14, fy - 16, 46, 16, '#9a6a36', '#c48f55', '#5e3b1e'); box(x + 12, fy - 19, 50, 3, '#f1e3bd', '#ffffff', '#c9b88a'); R(x + 24, fy - 12, 26, 8, '#7a4f26');
+    R(x + 20, fy - 27, 1, 8, '#b8bcc4'); R(x + 14, fy - 27, 13, 1, '#b8bcc4'); R(x + 13, fy - 26, 4, 2, '#e9c46a'); R(x + 24, fy - 26, 4, 2, '#e9c46a'); // balanza
+    R(x + 44, fy - 28, 9, 9, K); R(x + 45, fy - 27, 7, 8, '#9cc4ff'); R(x + 46, fy - 24, 2, 2, '#d62828'); R(x + 49, fy - 22, 2, 2, '#f4c20d'); R(x + 45, fy - 27, 1, 8, '#ffffff');
+    for (const [o, c, hi] of [[70, '#c1121f', '#ff5a5a'], [86, '#e9b21a', '#ffe36e'], [102, '#6a994e', '#a3cf86']]) { if (o > rw - 70) continue; box(x + o, fy - 9, 13, 9, '#c79a5b', '#e6c08a', '#8a6a36'); R(x + o + 1, fy - 12, 11, 3, c); R(x + o + 3, fy - 14, 7, 2, c); R(x + o + 5, fy - 15, 3, 1, c); R(x + o + 3, fy - 14, 2, 1, hi); }
+    for (const o of [44, 24]) { const dx = x + rw - o; box(dx, fy - 26, 17, 26, '#2f6fd0', '#7fb0ff', '#1d4a96'); R(dx, fy - 19, 17, 2, '#1d3557'); R(dx, fy - 8, 17, 2, '#1d3557'); R(dx + 3, fy - 16, 11, 6, '#f1faee'); R(dx + 5, fy - 14, 7, 2, '#2d6a4f'); }
+    R(x + rw - 27, fy - 6, 3, 2, '#e9c46a'); R(x + rw - 30, fy - 1, 12, 2, '#f2b705');
+    const lx = x + (rw >> 1); R(lx, y, 1, 6, K); R(lx - 4, y + 6, 9, 3, K); R(lx - 3, y + 7, 7, 2, '#ffe9a8'); T.glow(lx, y + 12, 9, '#fff6d6');
+  },
+];
+
+let house = null;
+function houseBase(W, H) {
+  if (house && house.W === W && house.H === H) return house;
+  const hud = new Hud(canvas(W, H)); hud.resize(W, H, 1);
+  const T = tools(hud), { R } = T, cx = W / 2;
+  const rw = Math.max(126, Math.min(176, (W - 44) / 2 | 0)), hw = rw * 2 + WALL * 3, hh = RH * 2 + WALL * 3;
+  const x0 = Math.round(cx - hw / 2), y0 = Math.round((H - hh) / 2) + 6, gy = y0 + hh;
+  // calle adoquinada, palmera y farola
+  R(0, gy, W, H - gy, '#14102a'); R(0, gy, W, 1, '#3a2f5e');
+  for (let j = 0, row = 0; gy + 3 + j < H; j += 5, row++) for (let i = (row % 2) * 6; i < W; i += 12) { R(i, gy + 3 + j, 9, 3, '#1f1840'); R(i, gy + 3 + j, 9, 1, '#2c2356'); }
+  const px0 = x0 - 26;
+  for (let y = gy - 58; y < gy; y++) { const bx = px0 + Math.round(Math.sin((y - gy) * 0.045) * 3); R(bx - 1, y, 5, 1, K); R(bx, y, 3, 1, (y & 3) ? '#5e3b1e' : '#3b2412'); R(bx, y, 1, 1, '#8a5a2b'); }
+  for (let a = 0; a < 8; a++) { const ang = -3.0 + a * 0.42; for (let d = 0; d < 17; d++) { const fx = px0 + Math.round(Math.cos(ang) * d), fy2 = gy - 58 + Math.round(Math.sin(ang) * d * 0.6 + d * d * 0.035); R(fx - 1, fy2 - 1, 4, 3, K); } }
+  for (let a = 0; a < 8; a++) { const ang = -3.0 + a * 0.42; for (let d = 0; d < 17; d++) { const fx = px0 + Math.round(Math.cos(ang) * d), fy2 = gy - 58 + Math.round(Math.sin(ang) * d * 0.6 + d * d * 0.035); R(fx, fy2, 2, 1, a % 2 ? '#2d6a4f' : '#3f8f68'); } }
+  R(px0 - 1, gy - 60, 4, 4, '#b5562b');
+  const lx = x0 + hw + 18; R(lx - 1, gy - 44, 4, 44, K); R(lx, gy - 44, 2, 44, '#2a2a3a'); R(lx, gy - 44, 1, 44, '#4a4a5e'); R(lx - 5, gy - 52, 12, 9, K); R(lx - 4, gy - 51, 10, 7, '#2a2a3a'); R(lx - 2, gy - 3, 6, 3, '#2a2a3a');
+  // muros en corte (ladrillo), enlucido exterior y azotea
+  R(x0 - 3, y0 - 3, hw + 6, hh + 5, K); T.bricks(x0, y0, hw, hh);
+  R(x0 - 2, y0 - 2, 3, hh + 3, '#d9b68a'); R(x0 + hw - 1, y0 - 2, 3, hh + 3, '#b8905e'); R(x0 - 2, y0 - 2, hw + 4, 2, '#e8cfa6'); R(x0 - 2, gy, hw + 4, 2, '#5e3b1e');
+  for (let x = x0 - 2; x < x0 + hw + 2; x += 9) { R(x - 1, y0 - 10, 8, 9, K); R(x, y0 - 9, 6, 7, '#d9b68a'); R(x, y0 - 9, 6, 1, '#f1dfc0'); R(x + 5, y0 - 9, 1, 7, '#b8905e'); }
+  const ax = x0 + 22; R(ax, y0 - 30, 1, 21, K); R(ax - 4, y0 - 28, 9, 1, K); R(ax - 3, y0 - 24, 7, 1, K); R(ax - 2, y0 - 20, 5, 1, K);            // antena
+  const dx = x0 + 52; R(dx, y0 - 16, 2, 8, K); T.disc(dx + 5, y0 - 19, 6, K); T.disc(dx + 5, y0 - 19, 5, '#b8bcc4'); T.disc(dx + 4, y0 - 20, 3, '#e4e7ec'); R(dx + 6, y0 - 20, 4, 1, K); // parabólica
+  const tk = x0 + hw - 92; T.box(tk, y0 - 23, 18, 14, '#5a7fa8', '#8fb4d9', '#3a5878'); R(tk + 2, y0 - 9, 2, 2, K); R(tk + 14, y0 - 9, 2, 2, K); R(tk, y0 - 18, 18, 1, '#3a5878'); // depósito
+  const pt = x0 + hw - 60; T.box(pt, y0 - 14, 8, 6, '#b5562b', '#e07a45', '#7a3414'); R(pt + 3, y0 - 22, 2, 8, '#3f8f68'); R(pt + 1, y0 - 19, 2, 3, '#3f8f68'); R(pt + 5, y0 - 20, 2, 4, '#2d6a4f'); // cactus
+  R(x0 + hw - 44, y0 - 24, 1, 16, K); R(x0 + hw - 12, y0 - 24, 1, 16, K);
+  // interiores
+  const rooms = [0, 1, 2, 3].map((i) => ({ x: x0 + WALL + (i % 2) * (rw + WALL), y: y0 + WALL + (i >> 1) * (RH + WALL) }));
+  rooms.forEach((p, i) => {
+    R(p.x - 1, p.y - 1, rw + 2, RH + 2, K); ROOM_PAINT[i](T, p.x, p.y, rw);
+    T.dith(p.x, p.y, rw, 2, '#00000066'); R(p.x, p.y, 2, RH, '#00000033'); R(p.x + rw - 2, p.y, 2, RH, '#00000033');
   });
-  // tuberías por dentro de los muros
-  const mid = { x: x0 + hw / 2, y: y0 + hh / 2 };
-  hud.rect(mid.x - 1, y0 + 2, 2, hh - 4, '#7a7f87'); hud.rect(x0 + 2, mid.y - 1, hw - 4, 2, '#7a7f87');
-  for (const [jx, jy] of [[mid.x, mid.y], [mid.x, y0 + 18], [mid.x, y0 + hh - 18], [x0 + 40, mid.y], [x0 + hw - 40, mid.y]]) hud.rect(jx - 2, jy - 2, 4, 4, '#b8bcc4');
-  const px = (a, b, w, h, c) => hud.rect(a, b, w, h, c), fr = Math.floor(t * 10);
+  // tuberías de cobre por dentro de los muros
+  const mx = x0 + WALL + rw + (WALL >> 1), my = y0 + WALL + RH + (WALL >> 1);
+  const pipeV = (x, ya, yb) => { R(x - 2, ya, 4, yb - ya, K); R(x - 1, ya, 2, yb - ya, '#c67a3c'); R(x - 1, ya, 1, yb - ya, '#f0a868'); };
+  const pipeH = (xa, xb, y) => { R(xa, y - 2, xb - xa, 4, K); R(xa, y - 1, xb - xa, 2, '#c67a3c'); R(xa, y - 1, xb - xa, 1, '#f0a868'); };
+  pipeV(mx, y0 + 2, gy - 2); pipeH(x0 + 2, x0 + hw - 2, my);
+  for (const [jx, jy] of [[mx, my], [mx, y0 + 24], [mx, gy - 24], [x0 + 46, my], [x0 + hw - 46, my]]) { R(jx - 3, jy - 3, 6, 6, K); R(jx - 2, jy - 2, 4, 4, '#e9c46a'); R(jx - 2, jy - 2, 2, 1, '#fff3b0'); }
+  house = { W, H, c: hud.c, rw, hw, hh, x0, y0, gy, rooms, mx, my, lampX: lx, lineX: x0 + hw - 44 };
+  return house;
+}
+
+function drawHouse(hud, t, from, to, k) {
+  const B = houseBase(hud.W, hud.H), { rw, rooms, x0, y0, gy, mx, my } = B, T = tools(hud), { R } = T, fr = Math.floor(t * 10);
+  hud.clear(); hud.g.drawImage(B.c, 0, 0);
+  // cosas que se mueven
+  T.glow(B.lampX + 1, gy - 47, 13, 'rgba(255,210,122,0.5)'); R(B.lampX - 3, gy - 50, 8, 5, Math.sin(t * 9) > -0.85 ? '#ffe9a8' : '#b9793f');
+  for (let d = 0; d <= 32; d++) R(B.lineX + d, y0 - 23 + Math.round(Math.sin(d / 32 * Math.PI) * 3), 1, 1, K);
+  for (const [d, c, hi] of [[5, '#8f1d2c', '#c1440e'], [13, '#1d6f73', '#2a9d8f'], [21, '#e9c46a', '#fff3b0']]) { const sy = y0 - 21 + Math.round(Math.sin(t * 2 + d) * 0.7); R(B.lineX + d - 1, sy - 1, 7, 9, K); R(B.lineX + d, sy, 5, 7, c); R(B.lineX + d, sy, 1, 7, hi); }
+  const cat = x0 + 84, tail = Math.round(Math.sin(t * 2) * 2); // el gato en la azotea
+  R(cat, y0 - 19, 8, 10, K); R(cat + 1, y0 - 25, 7, 7, K); R(cat + 1, y0 - 27, 2, 2, K); R(cat + 6, y0 - 27, 2, 2, K); for (let i = 0; i < 7; i++) R(cat - 1 - i, y0 - 11 - Math.round(Math.sin(i * 0.5) * (2 + tail)), 2, 2, K);
+  if (Math.floor(t * 0.6) % 5) { R(cat + 3, y0 - 22, 1, 2, '#b6ff5c'); R(cat + 6, y0 - 22, 1, 2, '#b6ff5c'); }
+  const looped = from !== null && from > to, seen = (i) => i <= to || looped;
+  const A = rooms[0], S = rooms[1], P = rooms[2], Hn = rooms[3], walk = (sp, amp, ph = 0) => Math.round(Math.sin(t * sp + ph) * amp);
+  if (seen(0)) { // cocina: vapor, destello del bidón y la jadda de ronda
+    for (let i = 0; i < 3; i++) { const q = (t * 0.8 + i * 0.33) % 1; R(A.x + 114 + Math.round(Math.sin(q * 6 + i) * 2), A.y + FY - 30 - Math.round(q * 12), 2, 2, q < 0.7 ? '#ffffffaa' : '#ffffff44'); }
+    if (fr % 8 < 2) { R(A.x + rw - 12, A.y + FY - 24, 1, 5, '#ffffff'); R(A.x + rw - 14, A.y + FY - 22, 5, 1, '#ffffff'); }
+    const jx = A.x + rw * 0.62 + walk(0.7, rw * 0.12); person(R, jx, A.y + FY - 22 - (fr % 4 < 2 ? 1 : 0), '#7d3c98', '#5e2a75', 'scarf', 'belgha');
+  }
+  if (seen(1)) { // salón: la tele parpadea y jeddi ronca
+    const f = Math.floor(t * 5) % 3, tv = ['#7fb2ff', '#a8ccff', '#5f96f0'][f];
+    R(S.x + rw - 44, S.y + FY - 36, 28, 19, tv); R(S.x + rw - 44, S.y + FY - 36, 28, 1, '#ffffff88'); R(S.x + rw - 40 + f * 6, S.y + FY - 30, 8, 9, '#ffffff55');
+    for (let i = 0; i < 26; i++) T.dith(S.x + rw - 48 - i, S.y + FY - 34 + (i >> 1), 2, 20 - (i >> 2), `rgba(127,178,255,${0.5 - i * 0.017})`, i & 1);
+    const sx = S.x + 54; R(sx - 1, S.y + FY - 30, 14, 18, K); R(sx, S.y + FY - 23, 12, 11, '#efe9d8'); R(sx + 9, S.y + FY - 23, 3, 11, '#c9c2ae'); R(sx + 3, S.y + FY - 29, 6, 6, '#c68a5b'); R(sx + 3, S.y + FY - 25, 6, 3, '#f4f1ea'); R(sx + 3, S.y + FY - 32, 6, 3, '#c1121f'); R(sx + 4, S.y + FY - 27, 3, 1, K);
+    const z = (t * 0.7) % 1; hud.text('z', sx + 16 + z * 6, S.y + FY - 34 - z * 9, { color: '#fdf6e3' }); if (z > 0.45) hud.text('Z', sx + 24 + z * 4, S.y + FY - 44 - z * 5, { color: '#fdf6e3' });
+  }
+  if (seen(2)) { // patio: agua de la fuente y gallinas
+    const cx = P.x + (rw >> 1), fy = P.y + FY;
+    for (let i = 0; i < 6; i++) { const q = (t * 1.6 + i / 6) % 1, sgn = i % 2 ? 1 : -1; R(cx + sgn * Math.round(2 + q * 12), fy - 23 + Math.round(q * q * 15) - Math.round(q * 4), 1, 2, '#bfe9ff'); }
+    R(cx - 20 + (fr % 6) * 6, fy - 7, 5, 1, '#bfe9ff'); R(cx - 8 + (fr % 4) * 4, fy - 22, 3, 1, '#bfe9ff');
+    chicken(R, P.x + 36 + walk(0.6, 12), fy - 10, Math.sin(t * 3) > 0.5); chicken(R, P.x + rw * 0.68 + walk(0.5, 9, 2), fy - 10, Math.sin(t * 2.3 + 1) > 0.6);
+  }
+  if (seen(3)) { // hanout: gota del bidón y Si Brahim barriendo
+    const q = (t * 0.9) % 1; R(Hn.x + rw - 26, Hn.y + FY - 5 + Math.round(q * 4), 1, 2, '#ffd23f');
+    person(R, Hn.x + rw * 0.48 + walk(0.6, rw * 0.1), Hn.y + FY - 22 - (fr % 4 < 2 ? 1 : 0), '#2b5fa8', '#1d4a80', 'cap', 'broom');
+  }
+  // habitaciones apagadas, rótulos y sellos
+  rooms.forEach((p, i) => {
+    if (i !== to) { R(p.x, p.y, rw, RH, seen(i) ? 'rgba(10,7,30,0.55)' : 'rgba(8,6,22,0.86)'); }
+    if (!seen(i)) { const qx = p.x + (rw >> 1), qy = p.y + (RH >> 1); T.disc(qx, qy, 13, K); T.disc(qx, qy, 12, '#3a3566'); T.disc(qx, qy, 10, '#1a1638'); hud.text('?', qx + 1, qy, { scale: 2, color: '#8f8ac8', outline: null }); return; }
+    const w = hud.width(ROOM_NAMES[i]) + 10, on = i === to;
+    R(p.x + 3, p.y + 3, w + 2, 13, K); R(p.x + 4, p.y + 4, w, 11, on ? '#b3121d' : '#3a2f6e'); R(p.x + 4, p.y + 4, w, 1, on ? '#ff5a5a' : '#6a5fae'); R(p.x + 4, p.y + 14, w, 1, on ? '#6e0a12' : '#231a4a');
+    hud.text(ROOM_NAMES[i], p.x + 9, p.y + 9, { align: 'left', color: on ? '#fff6d6' : '#c9c2f0', outline: null });
+    if (i < to && !looped) { const sx = p.x + rw - 54, sy = p.y + 4; R(sx - 1, sy - 1, 52, 15, K); R(sx, sy, 50, 13, '#ffd23f'); R(sx + 2, sy + 2, 46, 9, '#b3121d'); R(sx + 3, sy + 3, 44, 7, '#ffd23f'); hud.text('ROBADO', sx + 25, sy + 6, { color: '#8f1d2c', outline: null }); }
+    if (on && k >= 1 && Math.floor(t * 5) % 2) { R(p.x, p.y, rw, 2, '#ffd23f'); R(p.x, p.y + RH - 2, rw, 2, '#ffd23f'); R(p.x, p.y, 2, RH, '#ffd23f'); R(p.x + rw - 2, p.y, 2, RH, '#ffd23f'); }
+  });
+  const px = R, ctr = (i) => ({ x: rooms[i].x + rw * 0.5, y: rooms[i].y + FY - 4 });
   if (from === null) { // el principio: la familia en su agujero de la cocina
-    const p0 = pos(0), hx = p0.x, hy = p0.y + rh - 10;
-    hud.rect(hx, hy - 10, 12, 10, '#0b0b12'); hud.rect(hx + 2, hy - 12, 8, 2, '#0b0b12'); hud.rect(hx, hy - 10, 2, 10, '#ffb347'); hud.rect(hx + 2, hy - 8, 1, 8, '#b9793f');
-    drawRoachSprite(px, hx + 14, hy - 12, 1, Math.floor(t * 3) % 2 ? 0 : 1);
-    drawBabySprite(px, hx + 3, hy - 6, 1, fr); if (Math.sin(t * 5) > 0) drawBabySprite(px, hx + 37, hy - 6 - Math.abs(Math.sin(t * 9)) * 3, -1, fr);
-    if (k > 0.25) { const by = hy - 22 - Math.abs(Math.sin(t * 6)) * 2; hud.rect(hx + 21, by, 5, 5, '#0b0b12'); hud.rect(hx + 22, by + 1, 3, 2, '#ffd23f'); hud.rect(hx + 23, by + 3, 1, 1, '#ffd23f'); hud.text('la familia', hx + 31, by + 2, { align: 'left', color: '#ffd23f' }); }
-    const spot = { x: hx + 26, y: hy - 8 };
+    const hx = A.x, hy = A.y + FY;
+    drawRoachSprite(px, hx + 12, hy - 12, 1, Math.floor(t * 3) % 2 ? 0 : 1);
+    drawBabySprite(px, hx + 2, hy - 6, 1, fr); drawBabySprite(px, hx + 34, hy - 6 - Math.abs(Math.sin(t * 9)) * 3, -1, fr);
+    if (k > 0.25) { const by = hy - 26 - Math.abs(Math.sin(t * 6)) * 2; hud.arrow(hx + 20, by + 4, Math.PI / 2, '#ffd23f', 3); }
+    const spot = { x: hx + 24, y: hy - 10 };
     return { room: spot, focus: spot };
   }
   // la mudanza: la cucaracha por las tuberías, con las crías detrás
   const b = ctr(to), a = ctr(from);
-  const pts = (from >> 1) === (to >> 1) ? [a, { x: mid.x, y: a.y }, b]
-    : (from % 2) === (to % 2) ? [a, { x: a.x, y: mid.y }, b] : [a, { x: mid.x, y: a.y }, { x: mid.x, y: b.y }, b];
+  const pts = (from >> 1) === (to >> 1) ? [a, { x: mx, y: a.y }, b]
+    : (from % 2) === (to % 2) ? [a, { x: a.x, y: my }, b] : [a, { x: mx, y: a.y }, { x: mx, y: b.y }, b];
   const segs = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y)), total = segs.reduce((s, v) => s + v, 0);
   const at = (d) => { d = Math.max(0, d); for (let i = 0; i < segs.length; i++) { if (d <= segs[i] || i === segs.length - 1) { const q = Math.min(1, d / segs[i]); return { x: pts[i].x + (pts[i + 1].x - pts[i].x) * q, y: pts[i].y + (pts[i + 1].y - pts[i].y) * q }; } d -= segs[i]; } };
   const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2, done = e * total, moving = k > 0 && k < 1;
-  for (let d = 0; d < done - 30; d += 7) { const p = at(d); hud.rect(p.x - 1, p.y + 2, 3, 3, '#0b0b12'); hud.rect(p.x, p.y + 3, 1, 1, '#ffd23f'); }
+  for (let d = 0; d < done - 34; d += 7) { const p = at(d); R(p.x - 1, p.y + 1, 3, 3, K); R(p.x, p.y + 2, 1, 1, '#ffd23f'); }
   const p = at(done), q = at(done + 2), dir = q.x < p.x - 0.01 ? -1 : 1;
-  for (const [lag, ph] of [[26, 0], [16, 1]]) { const c = at(done - lag); if (done > lag || !moving) drawBabySprite(px, c.x - 4, c.y - 2 - (moving ? Math.abs(Math.sin(t * 13 + ph)) * 2 : 0), dir, fr + ph); }
-  if (moving && fr % 2) hud.rect(p.x - dir * 12, p.y + 3, 2, 2, '#d8cfb8');
-  drawRoachSprite(px, p.x - 10, p.y - 8 - (moving ? Math.abs(Math.sin(t * 12)) : 0), dir, moving ? fr : 0);
-  return { room: { x: b.x, y: b.y - 12 }, focus: p };
+  for (const [lag, ph] of [[28, 0], [17, 1]]) { const c = at(done - lag); if (done > lag || !moving) drawBabySprite(px, c.x - 4, c.y - 3 - (moving ? Math.abs(Math.sin(t * 13 + ph)) * 2 : 0), dir, fr + ph); }
+  if (moving && fr % 2) R(p.x - dir * 12, p.y + 2, 2, 2, '#e6dcc4');
+  drawRoachSprite(px, p.x - 10, p.y - 9 - (moving ? Math.abs(Math.sin(t * 12)) : 0), dir, moving ? fr : 0);
+  return { room: { x: b.x, y: b.y - 24 }, focus: { x: p.x, y: p.y - 8 } };
 }
 
+let mapHud = null;
 // Escena de cambio de sitio. ct: segundos dentro de la escena; info: { chapter, name, sub, loop }.
 export function drawTravel(hud, t, ct, dur, from, to, info) {
   const { W, H, g } = hud, cx = W / 2;

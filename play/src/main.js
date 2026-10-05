@@ -3,7 +3,7 @@ import { THREE, Gfx, basic, sph, put, GHOST } from './gfx.js';
 import { buildLevels, ROOM } from './world.js';
 import { makeRoach, animRoach, makeGranny, makeSlipper, makeCat, animCat, makeChicken, animChicken } from './actors.js';
 import { Hud, INK, GOLD, CREAM } from './hud.js';
-import { drawCity, drawMoon, drawRoof, drawLogo, drawClouds, drawTravel } from './art.js';
+import { drawCity, drawMoon, drawRoof, drawLogo, drawClouds, drawTravel, drawRoachSprite } from './art.js';
 import { Sfx } from './audio.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -188,10 +188,9 @@ function goNight(n) {
   if ((prev && prev.lv === p.lv) || (n === 1 && st.introSeen)) return startNight(n);
   const L = LV.levels[p.lv];
   const travel = { dur: 7.2, art: 'map', map: { from: prev ? prev.lv : null, to: p.lv }, info: { chapter: p.lv + 1, name: L.name, sub: L.sub, loop: p.loop }, iris: 'out', fade: true };
-  const logoDrop = { dur: 3.6, art: 'logo', fade: true, update: (dt) => { if (cine.t < 1.2 && cine.t + dt >= 1.2) { sfx.slap(); sfx.win(); } } };
-  // la primera vez, de fuera hacia dentro: la ciudad, el título, la casa y, ya en la cocina, la familia.
+  // la primera vez, de fuera hacia dentro: la ciudad, la casa y, ya en la cocina, la familia (el título ya salió en la portada).
   // Después: los hijos piden más, la mudanza por las tuberías y la presentación del sitio nuevo.
-  const steps = n === 1 ? [...openingSteps(), logoDrop, travel, ...kitchenSteps()] : [...familySteps(p), travel, ...placeSteps(n)];
+  const steps = n === 1 ? [...openingSteps(), travel, ...kitchenSteps()] : [...familySteps(p), travel, ...placeSteps(n)];
   playCine(steps, () => { st.introSeen = true; R.scared = 0; startNight(n); st.irisIn = 0.55; });
 }
 
@@ -910,10 +909,12 @@ function pointer(x, z, label, color) {
   hud.text(label, clamp(cx, 22, W - 22), cy + (cy > H / 2 ? -12 : 12), { color });
 }
 
-function toast(msg, y) {
-  const lines = hud.wrap(msg, hud.W - 60), w = Math.max(...lines.map((l) => hud.width(l))) + 16, h = lines.length * 10 + 8;
-  hud.panel(hud.W / 2 - w / 2, y - h, w, h);
-  lines.forEach((l, i) => hud.text(l, hud.W / 2, y - h + 9 + i * 10, { color: CREAM, outline: null }));
+function toast(msg) { // aviso bajo la barra de la noche
+  const lines = hud.wrap(msg, Math.min(hud.W - 60, 250)), w = Math.max(...lines.map((l) => hud.width(l))) + 34, h = lines.length * 10 + 10;
+  const x = Math.round(hud.W / 2 - w / 2), y = 42 + Math.round(Math.max(0, 0.15 - (2.6 - st.msgT)) * -40);
+  hud.plate(x, y, w, h);
+  hud.rect(x + 6, y + (h >> 1) - 5, 9, 10, INK); hud.rect(x + 7, y + (h >> 1) - 4, 7, 8, GOLD); hud.text('!', x + 11, y + (h >> 1), { color: INK, outline: null });
+  lines.forEach((l, i) => hud.text(l, x + 12 + w / 2, y + 9 + i * 10, { color: CREAM, outline: null }));
 }
 
 function drawWorldMarks() {
@@ -958,49 +959,109 @@ function drawWorldMarks() {
   }
 }
 
+const pxr = (a, b, w, h, c) => hud.rect(a, b, w, h, c);
+
 function drawPlayHud() {
-  const { W, H } = hud, cx = W / 2;
+  const { W, H } = hud, cx = W / 2, t = st.clock;
   // zit robado y carga
-  hud.panel(3, 3, 76, 33);
-  hud.bottle(9, 8, st.stolen / st.quota, st.clock);
-  hud.text(`${st.stolen}/${st.quota}`, 25, 13 - (st.punchOil > 0 ? 2 : 0), { scale: 2, color: st.punchOil > 0 ? '#ffffff' : GOLD, align: 'left' });
-  for (let i = 0; i < CARRY_MAX; i++) hud.drop(28 + i * 10, 24, GOLD, i >= R.carry);
+  hud.plate(3, 3, 78, 40);
+  hud.bottle(8, 8, st.stolen / st.quota, t);
+  const pop = st.punchOil > 0, nw = hud.text(st.stolen, 27, 15 - (pop ? 2 : 0), { scale: 2, color: pop ? '#ffffff' : GOLD, align: 'left', shadow: '#7a3d00' });
+  hud.text(`/${st.quota}`, 29 + nw, 18, { color: '#d9b25a', align: 'left' });
+  for (let i = 0; i < CARRY_MAX; i++) hud.socket(27 + i * 13, 27, i < R.carry, t);
   // la noche
-  const k = clamp(st.time / st.nightLen, 0, 1), late = k > 0.8, bw = Math.min(110, W - 190), bx = cx - bw / 2;
-  hud.text(late && Math.floor(st.clock * 3) % 2 ? '¡AMANECE!' : `NOCHE ${st.night} · ${world.short}`, cx, 8, { color: late ? '#ffa066' : SOFT });
-  hud.bar(bx, 17, bw, 4, k, late ? '#ff7a3b' : '#5a6ad0', '#1c2247');
-  hud.moon(Math.round(bx + k * bw) - 2, 16); hud.sun(Math.round(bx + bw + 5), 16, st.clock);
-  // puntos y vidas
-  hud.panel(W - 79, 3, 76, 33);
-  hud.text(String(st.score).padStart(6, '0'), W - 10, 12 - (st.punchScore > 0 ? 1 : 0), { color: st.punchScore > 0 ? '#ffffff' : CREAM, align: 'right' });
-  if (st.combo > 1) hud.text(`x${st.combo}`, W - 72, 12, { color: '#ffb347', align: 'left' });
-  for (let i = 0; i < 3; i++) hud.roach(W - 72 + i * 13, 22, i < st.lives);
-  // habilidades
-  let x = 4; const y = H - 17;
-  x += hud.keycap('ESP', x, y, true) + 3;
-  hud.text(st.plan.wings ? 'volar' : 'saltar', x, y + (st.plan.wings ? 3 : 5), { align: 'left', color: CREAM });
-  if (st.plan.wings) for (let i = 0; i < WINGS_MAX; i++) { // alas disponibles
-    const wx = x + i * 9, c = i < R.wings ? '#7dd3fc' : '#3d3850';
-    hud.rect(wx - 1, y + 7, 8, 6, INK); hud.rect(wx, y + 8, 6, 2, c); hud.rect(wx + 1, y + 10, 4, 1, c); hud.rect(wx + 2, y + 11, 2, 1, c);
+  const k = clamp(st.time / st.nightLen, 0, 1), late = k > 0.8, bw = clamp(W - 240, 70, 130);
+  hud.ribbon(late && Math.floor(t * 3) % 2 ? '¡AMANECE!' : `NOCHE ${st.night} · ${world.short}`, cx, 4, late ? { color: '#c1440e', dark: '#7a2606', light: '#ff8a4c' } : { color: '#2b3a8a', dark: '#161f55', light: '#5a6ad0' });
+  hud.skybar(cx - bw / 2, 25, bw, k, t);
+  // puntos, combo y vidas
+  hud.plate(W - 81, 3, 78, 40);
+  hud.text(String(st.score).padStart(6, '0'), W - 9, 14 - (st.punchScore > 0 ? 1 : 0), { color: st.punchScore > 0 ? '#ffffff' : GOLD, align: 'right', shadow: '#7a3d00' });
+  if (st.combo > 1) { hud.rect(W - 77, 8, 22, 13, INK); hud.rect(W - 76, 9, 20, 11, '#b3121d'); hud.rect(W - 76, 9, 20, 1, '#ff5a5a'); hud.text(`x${st.combo}`, W - 66, 14, { color: CREAM, outline: null }); }
+  for (let i = 0; i < 3; i++) {
+    if (i < st.lives) drawRoachSprite(pxr, W - 76 + i * 23, 25, 1, i === st.lives - 1 && R.alive ? Math.floor(t * 4) : 0);
+    else { hud.rect(W - 74 + i * 23, 29, 16, 7, INK); hud.rect(W - 73 + i * 23, 30, 14, 5, '#2f2a52'); hud.rect(W - 71 + i * 23, 31, 10, 3, '#3d3760'); }
   }
-  x += 34; x += hud.keycap('E', x, y, R.carry > 0) + 3;
-  hud.text('soltar zit', x, y + 5, { align: 'left', color: R.carry > 0 ? CREAM : '#8a86a0' });
-  hud.keycap('SHIFT', W - 70, y, true); hud.text('correr', W - 4, y + 5, { align: 'right', color: R.sprint ? GOLD : CREAM });
+  // teclas: saltar o volar, soltar zit, correr y cuánto ruido haces
+  const y = H - 20, wings = st.plan.wings, lw = wings ? 190 : 164;
+  if (st.mode === 'play' && !st.paused) {
+  hud.plate(3, y - 3, lw, 20);
+  let x = 8; x += hud.keycap('ESP', x, y, true, keys.has('Space')) + 4;
+  x += hud.text(wings ? 'volar' : 'saltar', x, y + 6, { align: 'left', color: CREAM, outline: null }) + 5;
+  if (wings) { for (let i = 0; i < WINGS_MAX; i++) hud.wing(x + i * 10, y + 4, i < R.wings); x += WINGS_MAX * 10 + 2; }
+  hud.rect(x, y, 1, 14, '#4a3f8e'); x += 5;
+  x += hud.keycap('E', x, y, R.carry > 0, keys.has('KeyE')) + 4;
+  hud.text('soltar zit', x, y + 6, { align: 'left', color: R.carry > 0 ? CREAM : '#7f79a8', outline: null });
+  hud.plate(W - 117, y - 3, 114, 20);
+  x = W - 112; x += hud.keycap('SHIFT', x, y, true, R.sprint) + 4;
+  x += hud.text('correr', x, y + 6, { align: 'left', color: R.sprint ? GOLD : CREAM, outline: null }) + 6;
+  hud.noise(x, y + 2, !R.alive ? 0 : R.noise > 7 ? 3 : R.noise > 3 ? 1 : 0);
+  }
 
   let msg = st.msgT > 0 && st.mode === 'play' ? st.msg : '';
   if (!msg && st.mode === 'play' && st.night === 1 && R.alive) {
     if (st.tut === 0) { msg = 'Cruza la cocina y busca zit. La flecha te guía'; if (dist(R.x, R.z, world.hole.x, world.hole.z) > 7) st.tut = 1; }
     else if (st.tut === 2 && R.carry > 0) msg = 'Lleva el zit a tu agujero';
   }
-  if (msg) toast(msg, H - 22);
+  if (msg) toast(msg);
 }
 
-function card(title, lines, color = GOLD, y0 = 0.3) {
-  const { W, H } = hud, cx = W / 2, slide = (1 - ease(clamp(st.modeT * 3, 0, 1))) * W;
-  const w = Math.min(W - 20, 270), h = 30 + lines.length * 12, y = Math.round(H * y0);
-  hud.panel(cx - w / 2 - slide, y, w, h);
-  hud.text(title, cx - slide, y + 14, { scale: 2, color });
-  lines.forEach(([l, c], i) => hud.text(l, cx - slide, y + 31 + i * 12, { color: c || CREAM }));
+// tarjeta con cinta de título que entra deslizándose; devuelve su esquina para pintar dentro
+function card(title, w, h, y0, opts = {}) {
+  const { W, H } = hud, slide = Math.round((1 - ease(clamp(st.modeT * 3, 0, 1))) * W);
+  const x = Math.round(W / 2 - w / 2) - slide, y = Math.round(H * y0);
+  hud.panel(x, y, w, h, { tone: opts.tone });
+  hud.ribbon(title, x + w / 2, y - 9, { scale: 2, ...opts.ribbon });
+  return { x, y, cx: x + w / 2 };
+}
+
+function drawCards() {
+  const { W, H } = hud, cx = W / 2, t = st.modeT, blink = Math.floor(st.clock * 2) % 2;
+  const prompt = (label, key, y) => { const w = hud.width(label) + hud.width(key) + 22, x = Math.round(cx - w / 2); const kw = hud.keycap(key, x, y - 7, true, blink); hud.text(label, x + kw + 5, y - 1, { align: 'left', color: CREAM }); };
+  if (st.mode === 'intro') {
+    const w = Math.min(W - 16, 296), news = hud.wrap(st.news, w - 76), c = card(`NOCHE ${st.night}`, w, 74 + news.length * 10, 0.26);
+    hud.text(world.name, c.cx, c.y + 30, { scale: 2, color: GOLD, shadow: '#7a3d00' });
+    const goal = `roba ${st.quota} gotas antes del amanecer`, gw = hud.width(goal);
+    hud.drop(c.cx - gw / 2 - 8, c.y + 44); hud.text(goal, c.cx + 4, c.y + 48, { color: CREAM, outline: null });
+    hud.divider(c.cx, c.y + 60, w - 60);
+    hud.rect(c.x + 12, c.y + 67, 38, 13, INK); hud.rect(c.x + 13, c.y + 68, 36, 11, '#1f7a5c'); hud.rect(c.x + 13, c.y + 68, 36, 1, '#7fe0c0'); hud.text('OJO', c.x + 31, c.y + 73, { color: CREAM, outline: null });
+    news.forEach((l, i) => hud.text(l, c.x + 58, c.y + 73 + i * 10, { align: 'left', color: '#b8f0d0', outline: null }));
+  } else if (st.mode === 'clear') {
+    const r = st.res, w = Math.min(W - 16, 230), c = card('¡ZIT ROBADO!', w, 122, 0.42, { ribbon: { color: '#c98a00', dark: '#7a4f00', light: '#ffe98a', text: '#fff6d6' } });
+    const stars = 1 + (r.stealth ? 1 : 0) + (r.time >= 40 ? 1 : 0);
+    for (let i = 0; i < 3; i++) { const on = i < stars && t > 0.5 + i * 0.3, pop = on && t < 0.62 + i * 0.3 ? -2 : 0; hud.icon('star', c.cx - 20 + i * 16 - 4, c.y + 20 + pop, on ? GOLD : '#3d3760'); }
+    const rows = [['drop', 'Zit robado', `${r.drops} gotas`], ['clock', 'Tiempo sobrante', `+${r.time}`], ['eye', r.stealth ? 'Sin dar la alarma' : 'Han dado la alarma', `+${r.stealth}`], ['heart', 'Vidas', `+${r.lives}`]];
+    rows.forEach(([ic, a, b], i) => {
+      if (t < 0.7 + i * 0.45) return;
+      const yy = c.y + 43 + i * 13;
+      if (ic === 'drop') hud.drop(c.x + 17, yy - 4); else hud.icon(ic, c.x + 13, yy - 3, ic === 'heart' ? '#ff5a5a' : '#b9c8ff');
+      hud.text(a, c.x + 28, yy, { align: 'left', color: CREAM, outline: null }); hud.text(b, c.x + w - 14, yy, { align: 'right', color: i === 2 && !r.stealth ? '#7f79a8' : GREEN, outline: null });
+    });
+    if (t > 2.7) { hud.divider(c.cx, c.y + 96, w - 50); hud.text('TOTAL', c.x + 14, c.y + 108, { align: 'left', color: GOLD, outline: null }); hud.text(st.score, c.x + w - 14, c.y + 108, { align: 'right', scale: 1, color: GOLD, shadow: '#7a3d00' }); }
+    if (t > 3.4) prompt('seguir', 'ENTER', Math.min(H - 12, c.y + 136));
+  } else if (st.mode === 'dawn') {
+    const c = card('AMANECE...', Math.min(W - 16, 240), 58, 0.32, { ribbon: { color: '#c1440e', dark: '#7a2606', light: '#ff8a4c' } });
+    hud.text('no has robado bastante zit', c.cx, c.y + 28, { color: CREAM, outline: null });
+    hud.icon('heart', c.cx - 54, c.y + 39, '#ff5a5a'); hud.text('pierdes una vida', c.cx + 6, c.y + 43, { color: '#ff8a8a', outline: null });
+  } else if (st.mode === 'over') {
+    hud.rect(0, 0, W, H, 'rgba(6,7,18,0.62)');
+    const w = Math.min(W - 16, 250), lines = hud.wrap(st.reason, w - 60), c = card('SAFI', w, 104 + lines.length * 10, 0.2, { tone: 'red' });
+    hud.icon('skull', c.cx - 3, c.y + 22, CREAM);
+    lines.forEach((l, i) => hud.text(l, c.cx, c.y + 42 + i * 10, { color: CREAM, outline: null }));
+    const yy = c.y + 46 + lines.length * 10;
+    hud.divider(c.cx, yy, w - 60);
+    hud.text(String(st.score).padStart(6, '0'), c.cx, yy + 18, { scale: 2, color: GOLD, shadow: '#7a3d00' });
+    hud.text(`noche ${st.night} · ${world.short.toLowerCase()}`, c.cx, yy + 34, { color: '#e0b0b8', outline: null });
+    hud.text(st.score >= st.best.score && st.score > 0 ? '¡nuevo récord!' : `récord: ${st.best.score}`, c.cx, yy + 46, { color: st.score >= st.best.score && st.score > 0 ? GREEN : '#b98a94', outline: null });
+    if (st.modeT > 1) prompt('otra vez', 'ENTER', Math.min(H - 12, c.y + 122 + lines.length * 10));
+  }
+  if (st.paused) {
+    hud.rect(0, 0, W, H, 'rgba(6,7,18,0.62)');
+    const w = Math.min(W - 16, 250), x = Math.round(cx - w / 2), y = Math.round(H * 0.2);
+    hud.panel(x, y, w, 128); hud.ribbon('PAUSA', cx, y - 9, { scale: 2, color: '#2b3a8a', dark: '#161f55', light: '#5a6ad0' });
+    [['WASD', 'moverse'], ['SHIFT', 'correr (hace ruido)'], ['ESP', 'saltar · en el aire, mantener: volar'], ['E', 'soltar una gota de zit'], ['M', 'silenciar'], ['P', 'seguir jugando']].forEach(([key, what], i) => {
+      const yy = y + 24 + i * 16; hud.keycap(key, x + 54 - hud.width(key) - 8, yy); hud.text(what, x + 60, yy + 6, { align: 'left', color: CREAM, outline: null });
+    });
+  }
 }
 
 function letterbox(cap, bar = 26) {
@@ -1023,9 +1084,11 @@ function drawTitle() {
   const dy = cy + half + 34;
   if (T > 3.4) for (let i = -7; i <= 7; i++) if (Math.abs(i) < (T - 3.4) * 20) hud.rect(cx + i * 9 - 1, dy + (i % 2 ? 1 : 0), 3, 3, i % 2 ? '#3fa7d6' : BORDER_C);
   if (T > 3.7) hud.text('la cucaracha que roba el aceite'.slice(0, Math.floor((T - 3.7) * 36)), cx, dy + 13, { color: '#ffd9a0' });
-  if (T > 4.8) {
-    if (Math.floor(t * 2) % 2) { hud.panel(cx - 44, H - 62, 88, 18); hud.text('PULSA ENTER', cx, H - 53, { color: CREAM, outline: null }); }
-    hud.text(st.best.score ? `récord: ${st.best.score} puntos · noche ${st.best.night}` : 'una noche en Marrakech', cx, H - 36, { color: '#b9b6e6' });
+  if (T > 4.8) { // botón de empezar: una placa con su tecla
+    const bob = Math.round(Math.sin(t * 3) * 1.5), w = 104, x = Math.round(cx - w / 2), y = H - 66 + bob;
+    hud.plate(x, y, w, 22); const kw = hud.keycap('ENTER', x + 7, y + 4, true, Math.floor(t * 2) % 2);
+    hud.text('empezar', x + 12 + kw, y + 10, { align: 'left', color: CREAM, outline: null });
+    hud.text(st.best.score ? `récord: ${st.best.score} puntos · noche ${st.best.night}` : 'una noche en Marrakech', cx, H - 34, { color: '#b9b6e6' });
   }
 }
 
@@ -1093,38 +1156,7 @@ function drawHud() {
     if (hgt > 30) { hud.text(st.banner.text, cx + 2, H * 0.42 + 2, { scale: sc, color: '#5a0a10', outline: null }); hud.text(st.banner.text, cx + rand(-2, 2), H * 0.42 + rand(-1, 1), { scale: sc, color: '#ffffff', outline: null }); }
   }
 
-  if (st.mode === 'intro') card(`NOCHE ${st.night}`, [[`${world.name} · roba ${st.quota} gotas antes del amanecer`], [st.news, GREEN]]);
-  else if (st.mode === 'clear') {
-    const r = st.res, t = st.modeT, rows = [['Zit robado', `${r.drops} gotas`], ['Tiempo sobrante', `+${r.time}`], [r.stealth ? 'Sin dar la alarma' : 'Han dado la alarma', `+${r.stealth}`], ['Vidas', `+${r.lives}`]];
-    const w = Math.min(W - 20, 210), h = 100, x = cx - w / 2, y = Math.round(H * 0.44);
-    hud.panel(x, y, w, h);
-    hud.text('¡ZIT ROBADO!', cx, y + 14, { scale: 2, color: GOLD });
-    rows.forEach(([a, b], i) => {
-      if (t < 0.7 + i * 0.45) return;
-      hud.text(a, x + 14, y + 34 + i * 12, { align: 'left', color: CREAM, outline: null }); hud.text(b, x + w - 14, y + 34 + i * 12, { align: 'right', color: i === 2 && !r.stealth ? '#8a86a0' : GREEN, outline: null });
-    });
-    if (t > 2.7) { hud.rect(x + 12, y + 79, w - 24, 1, BORDER_C); hud.text('TOTAL', x + 14, y + 88, { align: 'left', color: GOLD, outline: null }); hud.text(st.score, x + w - 14, y + 88, { align: 'right', color: GOLD, outline: null }); }
-    if (t > 3.4 && Math.floor(st.clock * 2) % 2) hud.text('ENTER: seguir', cx, y + h + 10, { color: CREAM });
-  } else if (st.mode === 'dawn') card('AMANECE...', [['no has robado bastante zit'], ['pierdes una vida', RED]], '#ffa066');
-  else if (st.mode === 'over') {
-    hud.rect(0, 0, W, H, 'rgba(6,7,18,0.6)');
-    const w = Math.min(W - 20, 240), y = Math.round(H * 0.16);
-    hud.panel(cx - w / 2, y, w, 120);
-    hud.text('SAFI', cx, y + 22, { scale: 4, color: RED, outline: null });
-    hud.wrap(st.reason, w - 20).forEach((l, i) => hud.text(l, cx, y + 48 + i * 10, { color: CREAM, outline: null }));
-    hud.text(`${st.score} puntos · noche ${st.night} · ${world.short}`, cx, y + 76, { color: GOLD, outline: null });
-    hud.text(st.score >= st.best.score && st.score > 0 ? '¡nuevo récord!' : `récord: ${st.best.score}`, cx, y + 90, { color: SOFT, outline: null });
-    if (st.modeT > 1 && Math.floor(st.clock * 2) % 2) hud.text('ENTER: otra vez', cx, y + 106, { color: CREAM, outline: null });
-  }
-
-  if (st.paused) {
-    hud.rect(0, 0, W, H, 'rgba(6,7,18,0.6)');
-    const w = 230, y = Math.round(H * 0.22); hud.panel(cx - w / 2, y, w, 108);
-    hud.text('PAUSA', cx, y + 15, { scale: 2, color: GOLD });
-    [['WASD / flechas', 'moverse'], ['SHIFT', 'correr (hace ruido)'], ['ESPACIO', 'saltar · en el aire, mantener: volar'], ['E', 'soltar una gota'], ['M', 'silenciar'], ['P', 'seguir']].forEach(([a, b], i) => {
-      hud.text(a, cx - 6, y + 34 + i * 11, { align: 'right', color: CREAM, outline: null }); hud.text(b, cx + 4, y + 34 + i * 11, { align: 'left', color: SOFT, outline: null });
-    });
-  }
+  drawCards();
   if (st.irisIn > 0) hud.iris(cx, H / 2, (Math.hypot(W, H) / 2 + 6) * ease(1 - st.irisIn / 0.55));
 }
 
