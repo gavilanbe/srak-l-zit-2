@@ -1471,4 +1471,4 @@ addEventListener('keydown', (e) => {
 resize();
 loadLevel(0); resetRoach();
 requestAnimationFrame(frame);
-window.game = { babies, cam, burst, ring, updateSlipper, get granny() { return grannyMesh; }, sfx, touch, app, applyUpdate, st, R, G, K, C, S, P, LV, gfx, keys, pressed, slicks, cine, get world() { return world; }, startGame, startNight, goNight, playEnding, update, killRoach, setLight, clearNight, endCine };
+window.game = { babies, cam, burst, ring, updateSlipper, showTunnel, get granny() { return grannyMesh; }, sfx, touch, app, applyUpdate, st, R, G, K, C, S, P, LV, gfx, keys, pressed, slicks, cine, get world() { return world; }, startGame, startNight, goNight, playEnding, update, killRoach, setLight, clearNight, endCine };
