@@ -13,8 +13,9 @@ const browser = await chromium.launch({ executablePath: `${cache}${dir}/${sub}/$
 const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
 const page = await ctx.newPage();
 const errors = []; page.on('pageerror', (e) => errors.push(e.message));
-const URL0 = 'http://localhost:8766/?pwa=prod';
-const version = () => page.evaluate(async () => (await import('/src/version.js')).VERSION);
+// URL=https://… comprueba una copia publicada (sin la parte de actualización, que necesita tocar los archivos locales)
+const LIVE = process.env.URL, URL0 = LIVE || 'http://localhost:8766/?pwa=prod';
+const version = () => page.evaluate(async () => (await import(new URL('src/version.js', document.baseURI).href)).VERSION);
 const ok = (label, pass, extra = '') => console.log(`${pass ? '✓' : '✗'} ${label}${extra ? ' — ' + extra : ''}`);
 
 await page.goto(URL0); await page.waitForFunction(() => window.game);
@@ -37,6 +38,7 @@ ok('arranca sin conexión', offline, `versión ${v1}`);
 if (offline) { await page.evaluate(() => { game.startGame(); for (let i = 0; i < 400; i++) game.update(0.03); }); ok('y se puede jugar sin conexión', await page.evaluate(() => ['cine', 'intro', 'play'].includes(game.st.mode))); }
 await ctx.setOffline(false);
 
+if (LIVE) { ok('sin errores de JavaScript', errors.length === 0, errors.join('; ')); await browser.close(); process.exit(0); }
 // publicar una versión nueva: se toca un archivo, se regenera el service worker y se mira si el juego la ofrece
 const main = fileURLToPath(new URL('../play/src/main.js', import.meta.url)), src = readFileSync(main, 'utf8');
 try {
