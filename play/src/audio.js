@@ -192,6 +192,7 @@ export class Sfx {
   lose() { [7, 5, 4, 1, 0].forEach((s, i) => this.tone(220 * 2 ** (s / 12), 0.3, { type: 'triangle', vol: 0.14, at: i * 0.2, send: 0.4 })); }
   dash() { this.tone(170, 0.22, { type: 'sawtooth', vol: 0.09, to: 320 }); this.noise(0.2, { vol: 0.08, freq: 2200, type: 'bandpass' }); }
   flap() { this.noise(0.07, { vol: 0.07, freq: 1500, type: 'bandpass' }); this.tone(190, 0.06, { type: 'sawtooth', vol: 0.03, to: 150, send: 0 }); }
+  hop() { this.tone(260, 0.1, { type: 'triangle', vol: 0.12, to: 420 }); }
   drip() { this.tone(900, 0.07, { type: 'sine', vol: 0.12, to: 400 }); }
   meow() { this.tone(620, 0.16, { type: 'triangle', vol: 0.13, to: 880 }); this.tone(880, 0.28, { type: 'triangle', vol: 0.13, to: 520, at: 0.16 }); }
   hiss() { this.noise(0.4, { vol: 0.16, freq: 5000, type: 'highpass' }); }

@@ -152,6 +152,30 @@ export function drawMoon(g, cx, cy, R) {
   }
 }
 
+// La cucaracha de perfil, 20x12 px. px(x, y, w, h, color) pinta un rectángulo; dir: 1 mira a la derecha, -1 a la izquierda.
+export function drawRoachSprite(px, x, y, dir = 1, frame = 0, carry = false) {
+  x = Math.round(x); y = Math.round(y);
+  const r = (a, b, w, h, c) => px(dir > 0 ? x + a : x + 20 - a - w, y + b, w, h, c), K = '#0b0b12';
+  r(1, 4, 14, 6, K); r(2, 3, 12, 8, K); r(13, 4, 5, 6, K); r(12, 0, 5, 5, K);           // contorno
+  r(2, 5, 13, 4, '#a8521c'); r(3, 4, 11, 6, '#a8521c');                                  // cuerpo
+  r(3, 4, 8, 4, '#64260c'); r(4, 4, 6, 1, '#8a3f18'); r(11, 4, 1, 6, '#431808');          // alas y pronoto
+  r(3, 9, 9, 1, '#c26a26');                                                              // vientre
+  r(14, 5, 3, 4, '#431808'); r(15, 5, 2, 2, '#fffbe8'); r(16, 6, 1, 1, K); r(17, 8, 2, 1, K); // cabeza, ojo y bigote
+  r(13, 1, 3, 3, '#d00000'); r(13, 1, 3, 1, '#ff3b3b'); r(12, 1, 1, 3, K);                // tarbouch con borla
+  const w = frame % 2;                                                                    // antenas y patas
+  r(17, 3 - w, 1, 1, '#2b0f05'); r(18, 2 - w, 1, 1, '#2b0f05'); r(19, 1 - w, 1, 1, '#2b0f05'); r(18, 4, 1, 1, '#2b0f05'); r(19, 4 + w, 1, 1, '#2b0f05');
+  for (let i = 0; i < 3; i++) { const lx = 4 + i * 4, f = (i + frame) % 2; r(lx, 10, 1, 1, '#2b0f05'); r(lx + (f ? 1 : -1), 11, 1, 1, '#2b0f05'); }
+  if (carry) { r(5, -1, 5, 6, K); r(6, 0, 3, 4, '#ffd23f'); r(7, -1, 1, 1, K); r(6, 1, 1, 1, '#fff6d6'); }
+}
+
+function drawBabySprite(px, x, y, dir, frame) { // cría, 9x6 px
+  x = Math.round(x); y = Math.round(y);
+  const r = (a, b, w, h, c) => px(dir > 0 ? x + a : x + 9 - a - w, y + b, w, h, c);
+  r(0, 1, 9, 4, '#0b0b12'); r(1, 0, 7, 6, '#0b0b12'); r(1, 2, 7, 2, '#cf8436'); r(2, 1, 5, 4, '#cf8436'); r(2, 1, 3, 2, '#9a5520');
+  r(6, 1, 2, 2, '#fffbe8'); r(7, 2, 1, 1, '#0b0b12');
+  for (let i = 0; i < 2; i++) r(2 + i * 3 + ((i + frame) % 2), 5, 1, 1, '#2b0f05');
+}
+
 // Siluetas en la azotea del primer plano: el pretil, el gato y la cucaracha cargando su gota.
 export function drawRoof(g, W, H, t, withRoach = true) {
   g.fillStyle = '#070414'; g.fillRect(0, H - 13, W, 13);
@@ -161,17 +185,7 @@ export function drawRoof(g, W, H, t, withRoach = true) {
   for (let i = 0; i < 9; i++) g.fillRect(cx - 1 - i, cy - 2 - Math.round(Math.sin(i * 0.4) * (2 + tail)), 2, 2);
   if (Math.floor(t * 0.6) % 5) { g.fillStyle = '#b6ff5c'; g.fillRect(cx + 3, cy - 15, 1, 2); g.fillRect(cx + 6, cy - 15, 1, 2); }
   if (!withRoach) return;
-  const x = Math.round(((t * 22) % (W + 60)) - 30), y = H - 24, f = Math.floor(t * 10) % 2;
-  g.fillStyle = '#070414'; g.fillRect(x - 1, y, 16, 7);
-  g.fillStyle = '#a8521c'; g.fillRect(x, y + 1, 12, 4); g.fillRect(x + 1, y, 10, 6);
-  g.fillStyle = '#64260c'; g.fillRect(x + 1, y + 1, 7, 3);
-  g.fillStyle = '#431808'; g.fillRect(x + 11, y + 1, 3, 4);
-  g.fillStyle = '#d00000'; g.fillRect(x + 10, y - 3, 3, 3);
-  g.fillStyle = '#fffbe8'; g.fillRect(x + 13, y + 2, 1, 1);
-  g.fillStyle = '#ffd23f'; g.fillRect(x + 3, y - 4, 4, 4); g.fillRect(x + 4, y - 5, 2, 1); g.fillStyle = '#fff6d6'; g.fillRect(x + 4, y - 3, 1, 1);
-  g.fillStyle = '#2b0f05';
-  for (let i = 0; i < 3; i++) g.fillRect(x + 2 + i * 4 + ((i + f) % 2), y + 6, 1, 2);
-  g.fillRect(x + 14, y - 1 - f, 3, 1); g.fillRect(x + 16, y - 2 - f, 2, 1);
+  drawRoachSprite((a, b, w, h, c) => { g.fillStyle = c; g.fillRect(a, b, w, h); }, ((t * 22) % (W + 60)) - 30, H - 29, 1, Math.floor(t * 10), true);
 }
 
 // ---------- logotipo ----------
@@ -284,7 +298,7 @@ function roomArt(hud, i, x, y, w, h, t) {
 }
 
 const STORY = [
-  'Todo empieza en la cocina de la jadda.',
+  'Una casa cualquiera de la medina. En un agujero de la cocina vive una familia.',
   'En la cocina ya no queda ni gota. Por la grieta, al salón.',
   'Jeddi se ha quedado sin argán. Tubería abajo, al patio.',
   'Queda el premio gordo: la tienda de Si Brahim, a pie de calle.',
@@ -304,8 +318,8 @@ function drawHouse(hud, t, from, to, k) {
   const hw = rw * 2 + wall * 3, hh = rh * 2 + wall * 3, gy = y0 + hh;
   // calle, palmera y farola
   hud.rect(0, gy, W, H - gy, '#0d0a1e'); hud.rect(0, gy, W, 2, '#2a1f45');
-  const px = x0 - 26; for (let y = gy - 46; y < gy; y++) hud.rect(px + Math.round(Math.sin((y - gy) * 0.05) * 2), y, 2, 1, '#1c1040');
-  for (let a = 0; a < 7; a++) { const ang = -2.9 + a * 0.45; for (let d = 0; d < 13; d++) hud.rect(px + Math.cos(ang) * d, gy - 46 + Math.sin(ang) * d * 0.6 + d * d * 0.03, 2, 1, '#1c1040'); }
+  const palm = x0 - 26; for (let y = gy - 46; y < gy; y++) hud.rect(palm + Math.round(Math.sin((y - gy) * 0.05) * 2), y, 2, 1, '#1c1040');
+  for (let a = 0; a < 7; a++) { const ang = -2.9 + a * 0.45; for (let d = 0; d < 13; d++) hud.rect(palm + Math.cos(ang) * d, gy - 46 + Math.sin(ang) * d * 0.6 + d * d * 0.03, 2, 1, '#1c1040'); }
   const lx = x0 + hw + 16; hud.rect(lx, gy - 34, 2, 34, '#1c1040'); hud.rect(lx - 3, gy - 38, 8, 5, '#1c1040'); hud.rect(lx - 2, gy - 37, 6, 3, Math.sin(t * 9) > -0.8 ? '#ffd27a' : '#b9793f');
   hud.rect(lx - 9, gy - 30, 20, 30, 'rgba(255,210,122,0.06)');
   // fachada, azotea y tejadillo del hanout
@@ -333,18 +347,29 @@ function drawHouse(hud, t, from, to, k) {
   const mid = { x: x0 + hw / 2, y: y0 + hh / 2 };
   hud.rect(mid.x - 1, y0 + 2, 2, hh - 4, '#7a7f87'); hud.rect(x0 + 2, mid.y - 1, hw - 4, 2, '#7a7f87');
   for (const [jx, jy] of [[mid.x, mid.y], [mid.x, y0 + 18], [mid.x, y0 + hh - 18], [x0 + 40, mid.y], [x0 + hw - 40, mid.y]]) hud.rect(jx - 2, jy - 2, 4, 4, '#b8bcc4');
-  // recorrido de la cucaracha
-  const b = ctr(to), a = from === null ? { x: x0 - 30, y: b.y } : ctr(from);
-  const pts = from === null ? [a, b] : (from >> 1) === (to >> 1) ? [a, { x: mid.x, y: a.y }, b]
+  const px = (a, b, w, h, c) => hud.rect(a, b, w, h, c), fr = Math.floor(t * 10);
+  if (from === null) { // el principio: la familia en su agujero de la cocina
+    const p0 = pos(0), hx = p0.x, hy = p0.y + rh - 10;
+    hud.rect(hx, hy - 10, 12, 10, '#0b0b12'); hud.rect(hx + 2, hy - 12, 8, 2, '#0b0b12'); hud.rect(hx, hy - 10, 2, 10, '#ffb347'); hud.rect(hx + 2, hy - 8, 1, 8, '#b9793f');
+    drawRoachSprite(px, hx + 14, hy - 12, 1, Math.floor(t * 3) % 2 ? 0 : 1);
+    drawBabySprite(px, hx + 3, hy - 6, 1, fr); if (Math.sin(t * 5) > 0) drawBabySprite(px, hx + 37, hy - 6 - Math.abs(Math.sin(t * 9)) * 3, -1, fr);
+    if (k > 0.25) { const by = hy - 22 - Math.abs(Math.sin(t * 6)) * 2; hud.rect(hx + 21, by, 5, 5, '#0b0b12'); hud.rect(hx + 22, by + 1, 3, 2, '#ffd23f'); hud.rect(hx + 23, by + 3, 1, 1, '#ffd23f'); hud.text('la familia', hx + 31, by + 2, { align: 'left', color: '#ffd23f' }); }
+    const spot = { x: hx + 26, y: hy - 8 };
+    return { room: spot, focus: spot };
+  }
+  // la mudanza: la cucaracha por las tuberías, con las crías detrás
+  const b = ctr(to), a = ctr(from);
+  const pts = (from >> 1) === (to >> 1) ? [a, { x: mid.x, y: a.y }, b]
     : (from % 2) === (to % 2) ? [a, { x: a.x, y: mid.y }, b] : [a, { x: mid.x, y: a.y }, { x: mid.x, y: b.y }, b];
   const segs = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y)), total = segs.reduce((s, v) => s + v, 0);
-  const at = (d) => { for (let i = 0; i < segs.length; i++) { if (d <= segs[i] || i === segs.length - 1) { const q = Math.min(1, d / segs[i]); return { x: pts[i].x + (pts[i + 1].x - pts[i].x) * q, y: pts[i].y + (pts[i + 1].y - pts[i].y) * q }; } d -= segs[i]; } };
-  const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2, done = e * total;
-  for (let d = 0; d < done; d += 6) { const p = at(d); hud.rect(p.x - 1, p.y - 1, 3, 3, '#0b0b12'); hud.rect(p.x, p.y, 1, 1, '#ffd23f'); }
-  const p = at(done), moving = k > 0 && k < 1;
-  if (moving && Math.floor(t * 12) % 2) hud.rect(p.x - 7 + Math.random() * 3, p.y + 2, 2, 2, '#d8cfb8');
-  hud.roach(p.x - 5, p.y - 4 - (moving ? Math.abs(Math.sin(t * 14)) * 2 : 0));
-  return ctr(to);
+  const at = (d) => { d = Math.max(0, d); for (let i = 0; i < segs.length; i++) { if (d <= segs[i] || i === segs.length - 1) { const q = Math.min(1, d / segs[i]); return { x: pts[i].x + (pts[i + 1].x - pts[i].x) * q, y: pts[i].y + (pts[i + 1].y - pts[i].y) * q }; } d -= segs[i]; } };
+  const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2, done = e * total, moving = k > 0 && k < 1;
+  for (let d = 0; d < done - 30; d += 7) { const p = at(d); hud.rect(p.x - 1, p.y + 2, 3, 3, '#0b0b12'); hud.rect(p.x, p.y + 3, 1, 1, '#ffd23f'); }
+  const p = at(done), q = at(done + 2), dir = q.x < p.x - 0.01 ? -1 : 1;
+  for (const [lag, ph] of [[26, 0], [16, 1]]) { const c = at(done - lag); if (done > lag || !moving) drawBabySprite(px, c.x - 4, c.y - 2 - (moving ? Math.abs(Math.sin(t * 13 + ph)) * 2 : 0), dir, fr + ph); }
+  if (moving && fr % 2) hud.rect(p.x - dir * 12, p.y + 3, 2, 2, '#d8cfb8');
+  drawRoachSprite(px, p.x - 10, p.y - 8 - (moving ? Math.abs(Math.sin(t * 12)) : 0), dir, moving ? fr : 0);
+  return { room: { x: b.x, y: b.y - 12 }, focus: p };
 }
 
 // Escena de cambio de sitio. ct: segundos dentro de la escena; info: { chapter, name, sub, loop }.
@@ -352,11 +377,14 @@ export function drawTravel(hud, t, ct, dur, from, to, info) {
   const { W, H, g } = hud, cx = W / 2;
   if (!mapHud || mapHud.W !== W || mapHud.H !== H) { mapHud = new Hud(canvas(W, H)); mapHud.resize(W, H, 1); }
   drawCity(g, W, H, t, 'night', 30); hud.rect(0, 0, W, H, 'rgba(7,6,24,0.7)');
-  const k = Math.max(0, Math.min(1, (ct - 0.9) / 2.7)), room = drawHouse(mapHud, t, from, to, k);
-  const zt = Math.max(0, Math.min(1, (ct - 3.9) / 1.1)), ez = 1 - (1 - zt) ** 3, z = 1 + ez * 1.25;
-  const rise = Math.round((1 - (1 - (1 - Math.min(1, ct / 0.7)) ** 3)) * H);
-  const fx = cx + (room.x - cx) * ez, fy = H / 2 + (room.y - 12 - H / 2) * ez, sw = W / z, sh = H / z;
-  g.drawImage(mapHud.c, fx - sw / 2, fy - sh / 2, sw, sh, 0, rise, W, H);
+  const k = Math.max(0, Math.min(1, (ct - 0.9) / 2.7)), { room, focus } = drawHouse(mapHud, t, from, to, k);
+  // la cámara se acerca a la cucaracha, la sigue por las tuberías y acaba en la habitación de destino
+  const c01 = (v) => Math.max(0, Math.min(1, v)), eo = (v) => 1 - (1 - v) ** 3;
+  const zb = eo(c01((ct - 0.5) / 1.0)), ez = eo(c01((ct - 3.9) / 1.1)), z1 = 1 + zb * 0.6, z = z1 + ez * (2.25 - z1);
+  const rise = Math.round((1 - eo(c01(ct / 0.7))) * H), sw = W / z, sh = H / z;
+  const f1x = cx + (focus.x - cx) * zb, f1y = H / 2 + (focus.y - H / 2) * zb;
+  const fx = f1x + (room.x - f1x) * ez, fy = f1y + (room.y - f1y) * ez;
+  g.drawImage(mapHud.c, Math.max(0, Math.min(W - sw, fx - sw / 2)), Math.max(0, Math.min(H - sh, fy - sh / 2)), sw, sh, 0, rise, W, H);
   // rótulos
   if (ct < 3.9) {
     hud.text(`CAPÍTULO ${info.chapter}${info.loop ? ' · OTRA VUELTA' : ''}`, cx, 13, { color: '#b9c8ff' });

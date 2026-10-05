@@ -24,22 +24,22 @@ const LV = buildLevels(scene);
 let world = LV.levels[0];
 
 const CARRY_MAX = 3, VISION = 10.5, VISION_HALF = 0.6, ROACH_R = 0.55, GRANNY_R = 1.35;
-const FLY_TIME = 1.5, FLY_REGEN = 1.1; // segundos de aleteo y lo que tarda en recuperarse posada
+const FLY_TIME = 1.6, WINGS_MAX = 3; // segundos que dura un vuelo y alas (vuelos) que se pueden acumular
 
 // La campaña: dos noches por sitio. Después del hanout, la casa se repite más difícil.
 const PLAN = [
-  { lv: 0, quota: 6, news: 'Mantén ESPACIO para volar: en lo alto hay zit rápido' },
-  { lv: 0, quota: 8, cat: true, glue: 2, bottle: true, news: 'Nuevo: Mchicha, el gato. A oscuras, no hagas ruido' },
+  { lv: 0, quota: 6, news: 'Roba zit sin que te vean. ESPACIO: saltito para esquivar' },
+  { lv: 0, quota: 8, glue: 2, bottle: true, news: 'Nuevo: ALAS. Salta y mantén ESPACIO. Cada vuelo gasta un ala' },
   { lv: 1, quota: 6, glue: 2, news: 'Jeddi oye todo. Corre o vuela cerca de él y se despierta' },
-  { lv: 1, quota: 8, cat: true, glue: 3, news: 'Mchicha se ha colado en el salón' },
-  { lv: 2, quota: 6, cat: true, chicks: 2, enemy: false, news: 'Las gallinas te ven de cerca. Escóndete o vuela' },
+  { lv: 1, quota: 8, cat: true, glue: 3, news: 'Nuevo: Mchicha, el gato. A oscuras, no hagas ruido' },
+  { lv: 2, quota: 6, cat: true, chicks: 2, enemy: false, news: 'Las gallinas te ven de cerca. Escóndete o súbete a algo' },
   { lv: 2, quota: 8, chicks: 3, glue: 2, news: 'La jadda sale a regar. Y trae el Baygon' },
-  { lv: 3, quota: 8, snaps: 3, news: 'Cepos: pásalos volando o rodéalos' },
+  { lv: 3, quota: 8, snaps: 3, news: 'Cepos: sáltalos o rodéalos' },
   { lv: 3, quota: 10, snaps: 5, glue: 3, news: 'El último golpe. Si Brahim está de mal humor' },
 ];
 function plan(n) {
   const i = (n - 1) % PLAN.length, loop = Math.floor((n - 1) / PLAN.length);
-  return { ...PLAN[i], loop, tier: Math.min(5, i + 1) + loop * 2, quota: PLAN[i].quota + loop * 2 };
+  return { ...PLAN[i], loop, wings: i > 0 || loop > 0, tier: Math.min(5, i + 1) + loop * 2, quota: PLAN[i].quota + loop * 2 };
 }
 
 // ---------- actores y efectos ----------
@@ -101,7 +101,7 @@ for (let i = 0; i < 5; i++) {
 }
 
 // ---------- estado ----------
-const R = { x: 0, z: 0, vx: 0, vz: 0, head: 0, carry: 0, fill: 0, hidden: false, lowHidden: false, alive: true, respawn: 0, inv: 0, poison: 0, walk: 0, glued: false, sprint: false, moving: false, y: 0, vy: 0, sup: 0, stam: 1, flying: false, flapT: 0, air: 0, wing: 0, turn: 0, squash: 0, noise: 1.6, ringT: 0, dripT: 0, deliverT: 0, delivered: 0, dustT: 0, scared: 0, cause: '' };
+const R = { x: 0, z: 0, vx: 0, vz: 0, head: 0, carry: 0, fill: 0, hidden: false, lowHidden: false, alive: true, respawn: 0, inv: 0, poison: 0, walk: 0, glued: false, sprint: false, moving: false, y: 0, vy: 0, sup: 0, wings: 0, fuel: 0, hopCd: 0, holdT: 0, flying: false, flapT: 0, air: 0, wing: 0, turn: 0, squash: 0, noise: 1.6, ringT: 0, dripT: 0, deliverT: 0, delivered: 0, dustT: 0, scared: 0, cause: '' };
 const G = { kind: 'jadda', state: 'away', t: 0, x: 0, z: 0, face: 0, baseFace: 0, node: 0, prev: -1, route: [], linger: 0, visit: 0, leaving: false, lost: 0, throwCd: 0, sprayCd: 0, hear: 0, say: '', sayT: 0, walk: 0, arm: -2.6, reroute: 0, lastX: 0, lastZ: 0 };
 const K = { on: false, state: 'sleep', t: 0, x: 0, z: 0, face: 0, tx: 0, tz: 0, vx: 0, vz: 0, walk: 0, dur: 1, dodged: false };
 const S = { st: 'idle', t: 0, dur: 1, from: new THREE.Vector3(), to: new THREE.Vector3(), harmless: false };
@@ -167,7 +167,8 @@ function setupNight(n) {
   looseDrops.forEach((d, i) => { d.on = i < count; d.m.visible = d.on; if (d.on) { [d.x, d.z] = spots[i]; d.m.position.set(d.x, 0.22, d.z); } });
   const ps = shuffle(world.plateSpots), plates = p.tier < 4 ? 2 : 3;
   world.plates.forEach((pl, i) => { pl.on = i < plates; pl.mesh.visible = pl.on; pl.amount = 3; pl.oil.visible = true; pl.oil.scale.set(1, 1, 1); if (pl.on) { [pl.x, pl.z] = ps[i]; pl.mesh.position.set(pl.x, 0, pl.z); } });
-  for (const h of world.high || []) { h.amount = 4; h.tasted = false; h.mesh.visible = true; }
+  for (const h of world.high || []) { h.amount = 2; h.tasted = false; h.mesh.visible = p.wings; }
+  R.wings = p.wings ? 1 : 0;
   K.on = !!p.cat; catMesh.visible = K.on;
   if (K.on) { const [cx, cz] = pick(world.catSpots.slice(0, 3)); Object.assign(K, { state: 'sleep', t: rand(4, 7), x: cx, z: cz, face: rand(-3, 3) }); }
   C.forEach((c, i) => { c.on = i < (p.chicks || 0); c.mesh.visible = c.on; if (c.on) { [c.x, c.z] = world.chickSpots[i]; Object.assign(c, { state: 'wander', t: rand(1, 3), tx: c.x, tz: c.z, face: rand(-3, 3) }); } });
@@ -188,13 +189,14 @@ function goNight(n) {
   const L = LV.levels[p.lv];
   const travel = { dur: 7.2, art: 'map', map: { from: prev ? prev.lv : null, to: p.lv }, info: { chapter: p.lv + 1, name: L.name, sub: L.sub, loop: p.loop }, iris: 'out', fade: true };
   const logoDrop = { dur: 3.6, art: 'logo', fade: true, update: (dt) => { if (cine.t < 1.2 && cine.t + dt >= 1.2) { sfx.slap(); sfx.win(); } } };
-  // la primera vez: apertura, la cocina, el título y el plano; después, plano y presentación del sitio
-  const steps = n === 1 ? [...openingSteps(), ...kitchenSteps(), logoDrop, travel] : [travel, ...placeSteps(n)];
+  // la primera vez, de fuera hacia dentro: la ciudad, el título, la casa y, ya en la cocina, la familia.
+  // Después: los hijos piden más, la mudanza por las tuberías y la presentación del sitio nuevo.
+  const steps = n === 1 ? [...openingSteps(), logoDrop, travel, ...kitchenSteps()] : [...familySteps(p), travel, ...placeSteps(n)];
   playCine(steps, () => { st.introSeen = true; R.scared = 0; startNight(n); st.irisIn = 0.55; });
 }
 
 function resetRoach() {
-  Object.assign(R, { x: world.hole.x + 0.8, z: world.hole.z, vx: 0, vz: 0, head: 0, carry: 0, fill: 0, alive: true, respawn: 0, inv: 2, poison: 0, glued: false, y: 0, vy: 0, sup: 0, stam: 1, flying: false, air: 0, wing: 0, squash: 0, deliverT: 0, delivered: 0 });
+  Object.assign(R, { x: world.hole.x + 0.8, z: world.hole.z, vx: 0, vz: 0, head: 0, carry: 0, fill: 0, alive: true, respawn: 0, inv: 2, poison: 0, glued: false, y: 0, vy: 0, sup: 0, fuel: 0, hopCd: 0, flying: false, air: 0, wing: 0, squash: 0, deliverT: 0, delivered: 0 });
   roachMesh.visible = true; soul.visible = false;
 }
 
@@ -269,7 +271,7 @@ function collide(p, r, y = 0) {
 function oilSources() {
   const list = world.oil.filter((o) => !o.bottle || st.plan.bottle);
   for (const p of world.plates) if (p.on && p.amount > 0) list.push(p);
-  for (const h of world.high || []) if (h.amount > 0) list.push(h);
+  if (st.plan.wings) for (const h of world.high || []) if (h.amount > 0) list.push(h);
   return list;
 }
 
@@ -294,23 +296,32 @@ function updateRoach(dt) {
 
   const wasGlued = R.glued;
   R.glued = R.y < 0.15 && world.glue.some((g) => g.on && dist(R.x, R.z, g.x, g.z) < g.r);
-  if (R.glued && !wasGlued) { sfx.glue(); say('¡Pegamento! Sal de ahí volando', 1.8); }
+  if (R.glued && !wasGlued) { sfx.glue(); say('¡Pegamento! Sal de ahí de un salto', 1.8); }
   for (const s of world.snaps) {
     if (!s.on || s.shut || R.y > 0.15 || dist(R.x, R.z, s.x, s.z) > 0.85) continue;
     s.shut = true; s.bar.position.x = -0.3; sfx.slap(); burst(s.x, 0.3, s.z, '#d7dbe2', 6, 4, 3); killRoach('trap');
   }
 
-  // vuelo: un toque es un saltito; mantener ESPACIO aletea y gana altura mientras quede aguante
-  const grounded = R.y <= R.sup + 0.02 && R.vy <= 0;
-  if (pressed.has('Space') && R.stam > 0.1) {
-    R.vy = Math.max(R.vy, 6); R.stam = Math.max(0, R.stam - 0.1); sfx.dash(); st.kick = Math.max(st.kick, 0.03);
-    if (grounded) { burst(R.x, R.y + 0.15, R.z, '#e6dcc4', 7, 3, 2, 0.4); ring(R.x, R.z, 8, '#ffffff', 0.45, 0.3); }
+  // ESPACIO: un toque es un saltito libre. Volar es otra cosa: en el aire, mantenerlo (o volver a pulsar)
+  // gasta un ala y deja aletear hasta FLY_TIME segundos. Las alas se ganan entregando cargas completas.
+  const grounded = R.y <= R.sup + 0.02 && R.vy <= 0, held = keys.has('Space');
+  R.hopCd = Math.max(0, R.hopCd - dt);
+  const takeoff = () => {
+    R.wings--; R.fuel = FLY_TIME; R.holdT = -99; R.vy = Math.max(R.vy, 4.5); sfx.dash(); st.kick = Math.max(st.kick, 0.04);
+    ring(R.x, R.z, 8, '#ffffff', 0.45, 0.3); burst(R.x, R.y + 0.2, R.z, '#fff3c4', 6, 3, 1, 0.4);
+  };
+  if (grounded) { R.fuel = 0; R.holdT = 0; }
+  if (pressed.has('Space')) {
+    if (grounded && R.hopCd <= 0) { R.vy = 5.4; R.hopCd = 0.85; R.holdT = 0; sfx.hop(); burst(R.x, R.y + 0.15, R.z, '#e6dcc4', 5, 2.5, 1.5, 0.35); }
+    else if (!grounded && R.fuel <= 0 && st.plan.wings) { if (R.wings > 0) takeoff(); else say('Sin alas. Entrega 3 gotas de una vez para ganar una', 2.4); }
   }
-  R.flying = keys.has('Space') && R.stam > 0 && !grounded;
+  if (!grounded && held && R.fuel <= 0 && st.plan.wings && R.wings > 0 && (R.holdT += dt) > 0.24) takeoff();
+  if (!held) R.fuel = 0; // soltar la tecla acaba el vuelo
+  R.flying = held && R.fuel > 0 && !grounded;
   if (R.flying) {
-    R.vy = Math.min(6.5, R.vy + 34 * dt); R.stam = Math.max(0, R.stam - dt / FLY_TIME);
+    R.vy = Math.min(6.5, R.vy + 34 * dt); R.fuel -= dt;
     R.flapT -= dt; if (R.flapT <= 0) { R.flapT = 0.11; sfx.flap(); }
-  } else if (grounded) R.stam = Math.min(1, R.stam + dt / FLY_REGEN);
+  }
   const airborne = !grounded;
   R.wing = airborne ? 1 : Math.max(0, R.wing - dt * 8);
   {
@@ -395,7 +406,10 @@ function updateRoach(dt) {
       floater(`+${10 * st.combo}`, world.hole.x + rand(-0.4, 0.8), world.hole.z + rand(-0.6, 0.6));
       burst(world.hole.x + 0.3, 0.5, world.hole.z, '#ffd23f', 5, 2.5, 4.5); babies.forEach((b) => { b.hop = 0.4; });
       if (R.carry === 0) {
-        if (R.delivered >= CARRY_MAX) { addScore(20, '¡Carga completa!', R.x, R.z, '#9be7a0'); sfx.bonus(); }
+        if (R.delivered >= CARRY_MAX) {
+          addScore(20, '¡Carga completa!', R.x, R.z, '#9be7a0'); sfx.bonus();
+          if (st.plan.wings && R.wings < WINGS_MAX) { R.wings++; floater('+1 ala', R.x, R.z + 0.9, '#7dd3fc'); }
+        }
         if (st.combo < 5) { st.combo++; floater(`combo x${st.combo}`, R.x, R.z - 0.8, '#ffb347'); }
         R.delivered = 0;
         if (st.tut < 3) { st.tut = 3; say('E suelta una gota: quien la pise, resbala', 4); }
@@ -724,6 +738,16 @@ function kitchenSteps() {
   ];
 }
 
+// Antes de mudarse: en el agujero del sitio ya saqueado, las crías quieren más.
+function familySteps(p) {
+  const h = world.hole, line = p.loop && p.lv === 0 ? 'El invierno es largo. Otra vuelta por la casa.' : ['', 'Queda el salón de jeddi. Vamos.', 'Al patio. Dicen que hay una khabia entera.', 'La tienda de Si Brahim. El golpe del siglo.'][p.lv];
+  return [
+    { dur: 2.8, cam: [h.x + 2, h.z, 1.8], fade: true, say: { who: 'baby', text: pick(['¡Baba! ¡Más zit!', '¡Sigo con hambre, baba!', '¡Otro poquito, baba!']) },
+      enter: () => { place(h.x + 2.2, h.z, Math.PI); grannyMesh.visible = false; setLight(!!world.alwaysLit); }, update: (dt, k) => { babies.forEach((b, i) => { if (b.hop <= 0 && Math.sin(k * 22 + i * 2) > 0.8) b.hop = 0.35; }); } },
+    { dur: 3.0, cam: [h.x + 2, h.z, 1.8], say: { who: 'roach', text: line }, update: (dt, k) => { R.air = k > 0.75 && k < 0.9 ? Math.sin((k - 0.75) / 0.15 * Math.PI) * 0.4 : 0; } },
+  ];
+}
+
 // Presentación de un sitio nuevo: la amenaza, el botín y la cucaracha armándose de valor.
 function placeSteps(n) {
   const p = plan(n), L = LV.levels[p.lv], h = L.hole, oil = L.oil[0];
@@ -901,7 +925,7 @@ function drawWorldMarks() {
       pointer(src.x, src.z, 'ZIT', GOLD);
     }
     const p = proj(R.x, R.y + 1.3, R.z);
-    if (R.stam < 0.999) hud.bar(p.x - 9, p.y - 5, 18, 2, R.stam, R.stam > 0.3 ? '#7dd3fc' : '#ff5a5a');
+    if (R.fuel > 0) hud.bar(p.x - 9, p.y - 5, 18, 2, R.fuel / FLY_TIME, R.fuel > 0.5 ? '#7dd3fc' : '#ff5a5a');
     if (R.fill > 0) hud.bar(p.x - 9, p.y - 9, 18, 3, R.fill, GOLD);
     if (st.detect > 0.02 && G.state === 'doze') { hud.bar(p.x - 10, p.y - 14, 20, 3, st.detect, st.detect > 0.6 ? RED : '#ffb347'); hud.text('ruido', p.x, p.y - 21, { color: st.detect > 0.6 ? RED : '#ffb347' }); }
     else if (st.detect > 0.02) {
@@ -953,8 +977,12 @@ function drawPlayHud() {
   for (let i = 0; i < 3; i++) hud.roach(W - 72 + i * 13, 22, i < st.lives);
   // habilidades
   let x = 4; const y = H - 17;
-  x += hud.keycap('ESP', x, y, R.stam > 0.1) + 3;
-  hud.bar(x, y + 9, 26, 2, R.stam, R.stam > 0.3 ? '#7dd3fc' : RED); hud.text('volar', x, y + 3, { align: 'left', color: R.stam > 0.1 ? CREAM : '#8a86a0' });
+  x += hud.keycap('ESP', x, y, true) + 3;
+  hud.text(st.plan.wings ? 'volar' : 'saltar', x, y + (st.plan.wings ? 3 : 5), { align: 'left', color: CREAM });
+  if (st.plan.wings) for (let i = 0; i < WINGS_MAX; i++) { // alas disponibles
+    const wx = x + i * 9, c = i < R.wings ? '#7dd3fc' : '#3d3850';
+    hud.rect(wx - 1, y + 7, 8, 6, INK); hud.rect(wx, y + 8, 6, 2, c); hud.rect(wx + 1, y + 10, 4, 1, c); hud.rect(wx + 2, y + 11, 2, 1, c);
+  }
   x += 34; x += hud.keycap('E', x, y, R.carry > 0) + 3;
   hud.text('soltar zit', x, y + 5, { align: 'left', color: R.carry > 0 ? CREAM : '#8a86a0' });
   hud.keycap('SHIFT', W - 70, y, true); hud.text('correr', W - 4, y + 5, { align: 'right', color: R.sprint ? GOLD : CREAM });
@@ -1093,7 +1121,7 @@ function drawHud() {
     hud.rect(0, 0, W, H, 'rgba(6,7,18,0.6)');
     const w = 230, y = Math.round(H * 0.22); hud.panel(cx - w / 2, y, w, 108);
     hud.text('PAUSA', cx, y + 15, { scale: 2, color: GOLD });
-    [['WASD / flechas', 'moverse'], ['SHIFT', 'correr (hace ruido)'], ['ESPACIO', 'mantener: volar y subirse'], ['E', 'soltar una gota'], ['M', 'silenciar'], ['P', 'seguir']].forEach(([a, b], i) => {
+    [['WASD / flechas', 'moverse'], ['SHIFT', 'correr (hace ruido)'], ['ESPACIO', 'saltar · en el aire, mantener: volar'], ['E', 'soltar una gota'], ['M', 'silenciar'], ['P', 'seguir']].forEach(([a, b], i) => {
       hud.text(a, cx - 6, y + 34 + i * 11, { align: 'right', color: CREAM, outline: null }); hud.text(b, cx + 4, y + 34 + i * 11, { align: 'left', color: SOFT, outline: null });
     });
   }
