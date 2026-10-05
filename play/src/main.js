@@ -3,7 +3,7 @@ import { THREE, Gfx, basic, sph, put, GHOST } from './gfx.js';
 import { buildLevels, ROOM } from './world.js';
 import { makeRoach, animRoach, makeGranny, makeSlipper, makeCat, animCat, makeChicken, animChicken } from './actors.js';
 import { Hud, INK, GOLD, CREAM } from './hud.js';
-import { drawCity, drawMoon, drawRoof, drawLogo, drawClouds, drawTravel, drawRoachSprite } from './art.js';
+import { drawCity, drawMoon, drawRoof, drawLogo, drawClouds, drawRoachSprite } from './art.js';
 import { Sfx } from './audio.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -46,7 +46,7 @@ function plan(n) {
 const roachMesh = makeRoach(); scene.add(roachMesh);
 const babies = [0.25, -0.3].map((h, i) => {
   const m = makeRoach({ baby: true }); m.rotation.y = -h; scene.add(m);
-  return { m, x: -14.5, z: 0, side: i ? 0.7 : -0.7, hop: 0 };
+  return { m, h, x: -14.5, z: 0, side: i ? 0.7 : -0.7, hop: 0 };
 });
 const looks = {};
 for (const k of ['jadda', 'jeddi', 'keeper']) { looks[k] = makeGranny(k); looks[k].visible = false; looks[k].userData.cone.scale.setScalar(VISION); scene.add(looks[k]); }
@@ -135,13 +135,30 @@ const winN = Col('#9db8ff'), winD = Col('#ffb26b'), tintN = Col('#b9c8ff'), tint
 let moonI = 1.7;
 
 // ---------- flujo ----------
+const STORY = ['', 'En la cocina ya no queda ni gota. Por dentro de la pared, al salón.', 'Jeddi se ha quedado sin argán. Tubería abajo, hacia el patio.', 'Queda el premio gordo: la tienda de Si Brahim, a pie de calle.'];
+const THREATS = ['la jadda', 'jeddi, que lo oye todo', 'las gallinas', 'Si Brahim y sus cepos'];
+
+// El interior de la pared sustituye al escenario mientras dura la mudanza.
+function showTunnel(fromLv, toLv) {
+  LV.levels.forEach((l) => { l.root.visible = false; });
+  const T = LV.tunnel; T.root.visible = true;
+  for (const [h, lv] of [[T.from, fromLv], [T.to, toLv]]) { h.mat.color.set(LV.levels[lv].glow); h.light.color.set(LV.levels[lv].glow); }
+  for (const k in looks) looks[k].visible = false;
+  catMesh.visible = false; K.on = false; C.forEach((c) => { c.on = false; c.mesh.visible = false; });
+  for (const list of [world.plates, world.glue, world.snaps]) list.forEach((o) => { o.on = false; o.mesh.visible = false; });
+  looseDrops.forEach((d) => { d.on = false; d.m.visible = false; }); slicks.forEach((q) => { q.on = false; q.m.visible = false; });
+  marker.visible = false; cloud.visible = false; slipMesh.visible = false; S.st = 'idle'; P.st = 'idle';
+  st.lightOn = false; st.light = 0; scene.background.set('#07050c'); moonC.set('#7a6aa8'); tintN.set('#e6d6c4'); moonI = 1.0;
+}
+
 function loadLevel(i) {
+  LV.tunnel.root.visible = false;
   LV.levels.forEach((l, j) => { l.root.visible = j === i; });
   world = LV.levels[i];
   for (const k in looks) looks[k].visible = false;
   grannyMesh = looks[world.look];
   world.holeLight.position.set(world.hole.x, 0.7, world.hole.z);
-  babies.forEach((b) => { b.z = world.hole.z + b.side; b.m.position.set(b.x, 0, b.z); });
+  babies.forEach((b) => { b.z = world.hole.z + b.side; b.m.position.set(b.x, 0, b.z); b.m.rotation.y = -b.h; b.m.visible = true; });
   scene.background.set(world.palette.bg); moonC.set(world.palette.moon); tintN.set(world.palette.tint); moonI = world.palette.moonI;
   for (const c of world.covers) c.hides = false;
 }
@@ -186,11 +203,9 @@ function startGame() {
 function goNight(n) {
   const p = plan(n), prev = n > 1 ? plan(n - 1) : null;
   if ((prev && prev.lv === p.lv) || (n === 1 && st.introSeen)) return startNight(n);
-  const L = LV.levels[p.lv];
-  const travel = { dur: 7.2, art: 'map', map: { from: prev ? prev.lv : null, to: p.lv }, info: { chapter: p.lv + 1, name: L.name, sub: L.sub, loop: p.loop }, iris: 'out', fade: true };
-  // la primera vez, de fuera hacia dentro: la ciudad, la casa y, ya en la cocina, la familia (el título ya salió en la portada).
-  // Después: los hijos piden más, la mudanza por las tuberías y la presentación del sitio nuevo.
-  const steps = n === 1 ? [...openingSteps(), travel, ...kitchenSteps()] : [...familySteps(p), travel, ...placeSteps(n)];
+  // la primera vez, de fuera hacia dentro: la ciudad y, ya en la cocina, la familia.
+  // Después: las crías piden más, la mudanza por dentro de la pared y la presentación del sitio nuevo.
+  const steps = n === 1 ? [...openingSteps(), ...kitchenSteps()] : [...familySteps(p), tunnelStep(prev.lv, p), ...placeSteps(n)];
   playCine(steps, () => { st.introSeen = true; R.scared = 0; startNight(n); st.irisIn = 0.55; });
 }
 
@@ -714,7 +729,7 @@ const openingSteps = () => [
 function kitchenSteps() {
   const L = LV.levels[0], h = L.hole, oil = L.oil[0], door = L.nodes[0];
   return [
-    { dur: 4.0, cam: [7, -3.5, 1.1], cam2: [-8.5, 4, 1.3], cap: 'La cocina de la jadda. Territorio enemigo.', iris: 'in',
+    { dur: 4.4, cam: [7, -3.5, 1.1], cam2: [-8.5, 4, 1.3], cap: 'La cocina de la jadda. Territorio enemigo.', iris: 'in', chapter: { n: 1, name: L.name, lv: 0, at: 0.7 },
       enter: () => { prep(1); place(h.x - 1.2, h.z, 0); G.state = 'cine'; roachMesh.visible = false; } },
     { dur: 2.9, cam: [h.x + 2, h.z, 1.7], say: { who: 'baby', text: '¡Baba! ¡Tenemos hambre!' },
       enter: () => { roachMesh.visible = true; },
@@ -745,6 +760,30 @@ function familySteps(p) {
       enter: () => { place(h.x + 2.2, h.z, Math.PI); grannyMesh.visible = false; setLight(!!world.alwaysLit); }, update: (dt, k) => { babies.forEach((b, i) => { if (b.hop <= 0 && Math.sin(k * 22 + i * 2) > 0.8) b.hop = 0.35; }); } },
     { dur: 3.0, cam: [h.x + 2, h.z, 1.8], say: { who: 'roach', text: line }, update: (dt, k) => { R.air = k > 0.75 && k < 0.9 ? Math.sin((k - 0.75) / 0.15 * Math.PI) * 0.4 : 0; } },
   ];
+}
+
+// La mudanza: salen por un agujero, corren por dentro de la pared saltando una cerilla y entran por el siguiente.
+function tunnelStep(fromLv, p) {
+  const path = (q) => (q < 0.1 ? { x: -13, z: lerp(-3, 0.9, q / 0.1), h: Math.PI / 2 }
+    : q > 0.9 ? { x: 13, z: lerp(0.9, -3, (q - 0.9) / 0.1), h: -Math.PI / 2 } : { x: lerp(-13, 13, (q - 0.1) / 0.8), z: 0.9, h: 0 });
+  const hopAt = (x) => (Math.abs(x) < 1.5 ? Math.sin((x + 1.5) / 3 * Math.PI) : 0);
+  return {
+    dur: 7.4, cam: [-11, 0, 1.5], cam2: [11, 0, 1.5], iris: 'both',
+    cap: p.loop && p.lv === 0 ? 'El invierno es largo. Otra vuelta por la casa, y todos más despiertos.' : STORY[p.lv],
+    chapter: { n: p.lv + 1, name: LV.levels[p.lv].name, lv: p.lv, at: 3.2, loop: p.loop },
+    enter: () => { showTunnel(fromLv, p.lv); place(-13, -3, Math.PI / 2); },
+    update: (dt, k) => {
+      const q = clamp(k * 1.03, 0, 1), a = path(q);
+      R.x = a.x; R.z = a.z; R.head += wrap(a.h - R.head) * Math.min(1, dt * 9); R.vx = q < 1 ? 5 : 0; R.air = hopAt(a.x) * 0.9;
+      babies.forEach((b, i) => {
+        const bq = clamp(q - 0.115 - i * 0.055, 0, 1), c = path(bq);
+        b.m.visible = bq > 0.005 && bq < 0.995; b.m.position.set(c.x, hopAt(c.x) * 0.7, c.z + (i ? 0.55 : -0.45)); b.m.rotation.y = -c.h; b.hop = 0;
+      });
+      world.holeLight.position.set(R.x + 0.8, 1.5, R.z + 1.4);
+      if (q > 0.1 && q < 0.9 && Math.random() < dt * 14) burst(R.x - 1.2, 0.1, R.z + rand(-0.4, 0.4), '#8a7a66', 1, 1, 1, 0.45);
+      if (Math.random() < dt * 5) burst(R.x + rand(-6, 8), rand(2, 6), rand(-2, 3), '#d9cdb8', 1, 0.15, 0.1, 1.6, 0.4); // motas de polvo
+    },
+  };
 }
 
 // Presentación de un sitio nuevo: la amenaza, el botín y la cucaracha armándose de valor.
@@ -835,7 +874,7 @@ function syncMeshes(dt) {
   }
   babies.forEach((b, i) => {
     b.hop = Math.max(0, b.hop - dt);
-    b.m.position.y = Math.sin(clamp(b.hop / 0.4, 0, 1) * Math.PI) * 0.5;
+    if (b.hop > 0 || !LV.tunnel.root.visible) b.m.position.y = Math.sin(clamp(b.hop / 0.4, 0, 1) * Math.PI) * 0.5;
     animRoach(b.m, { phase: st.clock * 6, speed: b.hop > 0 ? 0.6 : 0, time: st.clock + i * 1.7, turn: 0, air: 0, wing: 0, scared: 0, carry: 0, squash: 0 });
   });
 
@@ -1095,11 +1134,6 @@ function drawTitle() {
 const artC = document.createElement('canvas');
 function drawCineBody(s, k) {
   const { W, H, g } = hud, cx = W / 2, t = st.clock - st.cineT;
-  if (s.art === 'map') {
-    drawTravel(hud, st.clock, cine.t, s.dur, s.map.from, s.map.to, s.info);
-    hud.text('ENTER: saltar', W - 6, 8, { align: 'right', color: '#6a6f9a', outline: null });
-    return;
-  }
   if (s.art === 'logo') { // el título cae con estruendo sobre negro
     const a = cine.t - 0.3, cy = Math.round(H * 0.42);
     hud.rect(0, 0, W, H, '#07061c');
@@ -1127,10 +1161,30 @@ function drawCineBody(s, k) {
   }
   drawWorldMarks();
   letterbox(s.cap);
+  if (s.chapter) drawChapter(s.chapter);
   if (s.say) {
     const p = s.say.who === 'baby' ? proj(babies[0].x + 0.3, 1.6, world.hole.z) : proj(R.x, 2.2, R.z);
     hud.bubble([s.say.text.slice(0, Math.floor(cine.t * 34)) || ' '], p.x, p.y);
   }
+}
+
+// Rótulo de capítulo sobre la escena, con el recorrido por la casa como una fila de nombres.
+function drawChapter(ch) {
+  const { W, H } = hud, cx = W / 2, q = cine.t - ch.at;
+  const names = LV.levels.map((l) => l.short), gap = 12, total = names.reduce((a, n) => a + hud.width(n), 0) + gap * 3;
+  let x = Math.round(cx - total / 2);
+  names.forEach((n, i) => {
+    const w = hud.width(n), now = i === ch.lv, done = i < ch.lv && !ch.loop;
+    if (now) { hud.rect(x - 4, H - 46, w + 8, 13, INK); hud.rect(x - 3, H - 45, w + 6, 11, '#b3121d'); hud.rect(x - 3, H - 45, w + 6, 1, '#ff5a5a'); }
+    hud.text(n, x, H - 40, { align: 'left', color: now ? CREAM : done ? GOLD : '#6a6f9a', outline: now ? null : INK });
+    if (i < 3) hud.arrow(x + w + gap / 2, H - 40, 0, i < ch.lv ? GOLD : '#4a4f7a', 2);
+    x += w + gap;
+  });
+  if (q < 0) return;
+  const sc = (W > 340 ? 3 : 2) + (q < 0.1 ? 1 : 0);
+  hud.ribbon(`CAPÍTULO ${ch.n}${ch.loop ? ' · OTRA VUELTA' : ''}`, cx, 32);
+  hud.text(ch.name, cx + 2, 66, { scale: sc, color: '#5a0a10', outline: null }); hud.text(ch.name, cx, 64, { scale: sc, color: GOLD, outline: INK });
+  if (q > 0.9) hud.text(`cuidado con ${THREATS[ch.lv]}`, cx, 86, { color: '#ff9a9a' });
 }
 
 function drawCine() {

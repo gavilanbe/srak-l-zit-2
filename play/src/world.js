@@ -222,7 +222,7 @@ function cocina(K) {
   K.graph([[9.5, -7.8], [5, -6.3], [-5.5, -5.6], [-10.8, -3.6], [-10.2, 6], [0, 7.2], [5.6, 1.6], [12.6, -3]],
     [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 1], [6, 7], [7, 0], [1, 7]]);
   return Object.assign(L, {
-    name: 'LA COCINA', theme: 'cocina', short: 'COCINA', enemy: 'jadda', look: 'jadda', who: 'la jadda',
+    name: 'LA COCINA', theme: 'cocina', glow: '#ffb347', short: 'COCINA', enemy: 'jadda', look: 'jadda', who: 'la jadda',
     sub: 'La jadda guarda el zit. Y tiene el sueño ligero.',
     dropSpots: [[-10, -2], [-5, -4.8], [3.5, 4.8], [7.5, -3], [12.5, -7], [13.3, 4.6], [-12, 2.6], [2.6, 8.8], [6.5, -8.6], [-8.5, 8.4], [4.2, -1]],
     plateSpots: [[-6, 6.6], [4.2, -1.4], [7.8, -5.4], [-10.6, -1.4], [1.6, 5.4], [12.8, -5.6], [5.4, 9], [-3, -6]],
@@ -271,7 +271,7 @@ function salon(K) {
   L.oil.push({ x: 12.3, z: 7.2, r: 2.1, rate: 1.0 });
   K.graph([[3, 1.5]], []);
   return Object.assign(L, {
-    name: 'EL SALÓN', theme: 'salon', short: 'SALÓN', enemy: 'sleeper', look: 'jeddi', who: 'jeddi',
+    name: 'EL SALÓN', theme: 'salon', glow: '#7fb2ff', short: 'SALÓN', enemy: 'sleeper', look: 'jeddi', who: 'jeddi',
     sub: 'Jeddi duerme con la tele puesta. No hagas ruido.',
     capThreat: 'Jeddi ronca delante de la tele. El ruido lo despierta.', capOil: 'Al fondo, la tinaja de aceite de argán.',
     dropSpots: [[-9, -4], [1, -5.5], [8.5, 0.5], [12, -1], [-6, 7.5], [0, 7], [5, 8.5], [-10.5, 2], [9.5, -5.5], [-2, 1.5]],
@@ -319,7 +319,7 @@ function patio(K) {
   K.graph([[9.5, -7.8], [4.5, -5.2], [-4.5, -5.2], [-5.2, 0.6], [-3, 6.8], [4, 5.8], [5.4, 1.4]],
     [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 1]]);
   return Object.assign(L, {
-    name: 'EL PATIO', theme: 'patio', short: 'PATIO', enemy: 'jadda', look: 'jadda', who: 'la jadda', outdoor: true,
+    name: 'EL PATIO', theme: 'patio', glow: '#cfe0ff', short: 'PATIO', enemy: 'jadda', look: 'jadda', who: 'la jadda', outdoor: true,
     sub: 'Luna llena sobre el riad. Las gallinas no duermen.',
     capThreat: 'Las gallinas andan sueltas. Y pican fuerte.', capOil: 'La khabia de aceite, junto a la puerta azul.',
     dropSpots: [[-9, -5], [-4.5, 3.6], [3.8, -4], [11.5, 1], [1, 8.4], [-11, 8.4], [12.5, 5], [5.5, 3.6], [-6.8, -2.4]],
@@ -372,7 +372,7 @@ function hanout(K) {
   K.graph([[-8, -2.5], [-1, -2.5], [3.5, -7], [10.5, -7], [10.5, 2.5], [3.8, 3.5], [3.5, 7], [-6.5, 6.8], [-9.8, 1]],
     [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 0], [1, 5]]);
   return Object.assign(L, {
-    name: 'EL HANOUT', theme: 'hanout', short: 'HANOUT', enemy: 'keeper', look: 'keeper', who: 'Si Brahim', alwaysLit: true,
+    name: 'EL HANOUT', theme: 'hanout', glow: '#fff1c9', short: 'HANOUT', enemy: 'keeper', look: 'keeper', who: 'Si Brahim', alwaysLit: true,
     sub: 'La tienda de Si Brahim. Nunca cierra. Nunca duerme.',
     capThreat: 'Si Brahim hace la ronda. Y ha puesto cepos por toda la tienda.', capOil: 'Dos bidones de zit. El golpe del siglo.',
     dropSpots: [[-4, -0.5], [1, 0.5], [9, -3.5], [12.5, 4.6], [-11, -1.5], [0, 6.2], [5, 5.2], [-5.5, 8.6], [13, -2]],
@@ -381,6 +381,67 @@ function hanout(K) {
     snapSpots: [[-7.6, 1.6], [2.6, 5.4], [8.8, -0.6], [11.8, -3.4], [-3.4, -5.2]],
     palette: { bg: '#0b0d12', moon: '#7f9be6', moonI: 1.6, tint: '#ffffff' },
   });
+}
+
+// ---------- el interior de la pared: por aquí se muda la familia de un sitio a otro ----------
+function brickTex(g) {
+  g.fillStyle = '#3e2214'; g.fillRect(0, 0, 32, 32);
+  for (let r = 0; r < 4; r++) for (let c = -1; c < 3; c++) {
+    const x = c * 16 + (r % 2) * 8, y = r * 8;
+    g.fillStyle = ['#8a5232', '#7a4a2c', '#93603a', '#6e4026', '#84502e'][(r * 3 + c + 5) % 5]; g.fillRect(x + 1, y + 1, 14, 6);
+    g.fillStyle = 'rgba(255,255,255,0.14)'; g.fillRect(x + 1, y + 1, 14, 1); g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(x + 1, y + 6, 14, 1);
+    if ((r + c) % 3 === 0) { g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(x + 5, y + 3, 4, 2); }
+  }
+}
+function plankTex(g) {
+  for (let r = 0; r < 4; r++) {
+    g.fillStyle = ['#5e4630', '#54402c', '#66503a', '#4e3a28'][r]; g.fillRect(0, r * 8, 32, 8);
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(0, r * 8 + 7, 32, 1); g.fillRect((r * 11 + 5) % 32, r * 8, 1, 7);
+    g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(0, r * 8, 32, 1); g.fillRect((r * 7 + 3) % 20, r * 8 + 3, 9, 1); g.fillRect((r * 13 + 12) % 22, r * 8 + 5, 6, 1);
+    g.fillStyle = '#2a1d14'; g.fillRect((r * 11 + 7) % 32, r * 8 + 3, 1, 1);
+  }
+}
+function webTex(g, w, h) { // telaraña en una esquina
+  g.fillStyle = 'rgba(235,235,245,0.7)';
+  for (let a = 0; a <= 6; a++) { const ang = a / 6 * Math.PI / 2; for (let d = 0; d < w; d++) g.fillRect(Math.round(Math.cos(ang) * d), Math.round(Math.sin(ang) * d), 1, 1); }
+  for (const r of [9, 17, 25, 31]) for (let a = 0; a < 6; a++) { const a0 = a / 6 * Math.PI / 2, a1 = (a + 1) / 6 * Math.PI / 2; for (let k = 0; k <= 10; k++) { const q = k / 10, sag = 1 - Math.sin(q * Math.PI) * 0.12; g.fillRect(Math.round((Math.cos(a0) * (1 - q) + Math.cos(a1) * q) * r * sag), Math.round((Math.sin(a0) * (1 - q) + Math.sin(a1) * q) * r * sag), 1, 1); } }
+}
+
+function tunnel(root) {
+  const add = (o, x, y, z) => put(root, o, x, y, z), copper = '#c67a3c';
+  add(box(38, 0.8, 8, '#2a1d14'), 0, -0.41, 0.5);
+  const f = add(plane(38, 8, toon('#ffffff', canvasTex(32, 32, plankTex, 9.5, 2))), 0, 0, 0.5); f.rotation.x = -Math.PI / 2; f.castShadow = false;
+  add(box(38, 7.6, 0.6, '#3e2214'), 0, 3.8, -3.8);
+  add(plane(38, 7.6, toon('#ffffff', canvasTex(32, 32, brickTex, 9.5, 1.9))), 0, 3.8, -3.49).castShadow = false;
+  add(box(0.6, 7.6, 8, '#33200f'), -19.3, 3.8, 0.5);
+  // los dos agujeros: de dónde vienen y adónde van, cada uno con la luz de su habitación
+  const holes = [-13, 13].map((x) => {
+    const mat = basic('#ffb347'), light = new THREE.PointLight('#ffb347', 14, 11, 1.5);
+    add(box(3.6, 3.3, 0.2, '#120a06'), x, 1.65, -3.46); add(cyl(1.8, 1.8, 0.2, '#120a06', 16), x, 3.3, -3.46).rotation.x = Math.PI / 2;
+    add(box(3.0, 3.0, 0.2, mat), x, 1.5, -3.42).castShadow = false; const top = add(cyl(1.5, 1.5, 0.2, mat, 16), x, 3.0, -3.42); top.rotation.x = Math.PI / 2; top.castShadow = false;
+    light.position.set(x, 1.8, -1.6); root.add(light);
+    return { mat, light };
+  });
+  // tuberías de cobre, juntas, llave de paso y vigas
+  const pipe = (r, len, x, y, z, vertical) => { const m = add(cyl(r, r, len, copper, 10), x, y, z); if (!vertical) m.rotation.z = Math.PI / 2; return m; };
+  pipe(0.5, 38, 0, 1.1, -2.7); pipe(0.3, 38, 0, 4.6, -3.0); pipe(0.36, 3.6, -4, 2.9, -2.7, true); pipe(0.3, 2.4, 6, 5.8, -3.0, true);
+  for (const x of [-16, -9.5, -4, 2.5, 8, 15.5]) { const j = add(cyl(0.66, 0.66, 0.5, '#e9c46a', 10), x, 1.1, -2.7); j.rotation.z = Math.PI / 2; }
+  for (const x of [-12, 0, 6, 12]) { const j = add(cyl(0.42, 0.42, 0.4, '#e9c46a', 10), x, 4.6, -3.0); j.rotation.z = Math.PI / 2; }
+  const wheel = add(new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.13, 6, 12), toon('#c1121f')), -4, 3.4, -2.1); wheel.castShadow = true;
+  add(box(1.1, 0.12, 0.12, '#c1121f'), -4, 3.4, -2.1); add(box(0.12, 1.1, 0.12, '#c1121f'), -4, 3.4, -2.1); add(cyl(0.1, 0.1, 0.6, '#b8bcc4', 6), -4, 3.4, -2.4).rotation.x = Math.PI / 2;
+  for (const x of [-8.6, 3.4, 9.6]) { add(box(0.8, 7.6, 0.8, '#5e3b1e'), x, 3.8, -3.0); add(box(0.9, 0.5, 0.9, '#4a2f18'), x, 0.25, -3.0); }
+  const webMat = new THREE.MeshBasicMaterial({ map: canvasTex(32, 32, webTex), transparent: true, depthWrite: false });
+  for (const [x, flip] of [[-8.2, 1], [3.8, 1], [9.2, -1]]) { const w = add(new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), webMat), x + 1.3 * flip, 6.2, -2.55); w.scale.set(flip, -1, 1); }
+  // cosas perdidas, enormes al lado de una cucaracha
+  const match = add(cyl(0.16, 0.16, 5.2, '#e6cf9a', 6), 0, 0.16, 0.9); match.rotation.x = Math.PI / 2; match.rotation.z = 0.25; add(sph(0.3, '#c1121f', 8, 6), -0.64, 0.2, 3.4).scale.z = 1.5;
+  add(cyl(1.25, 1.25, 0.14, '#e9c46a', 18), -7, 0.07, 2.4); add(cyl(0.95, 0.95, 0.16, '#d4a017', 18), -7, 0.08, 2.4); add(cyl(0.3, 0.3, 0.18, '#e9c46a', 8), -7, 0.09, 2.4);      // un dírham
+  add(cyl(0.9, 0.9, 0.2, '#2a9d8f', 14), 6.6, 0.1, 2.7); for (const [dx, dz] of [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]]) add(cyl(0.12, 0.12, 0.22, '#145a50', 6), 6.6 + dx, 0.1, 2.7 + dz); // botón
+  add(cyl(0.55, 0.7, 1.0, '#b8bcc4', 10), 10.4, 0.5, -1.4); add(cyl(0.72, 0.72, 0.12, '#8a8f98', 10), 10.4, 0.06, -1.4);                                               // dedal
+  const screw = add(cyl(0.14, 0.05, 1.8, '#8a8f98', 6), -11, 0.16, 2.6); screw.rotation.x = Math.PI / 2; screw.rotation.z = -0.5; add(cyl(0.32, 0.32, 0.12, '#b8bcc4', 8), -10.56, 0.18, 1.82).rotation.x = Math.PI / 2;
+  for (const [x, z, s] of [[-3, 2.8, 0.5], [3.6, -1.2, 0.4], [12.6, 2.9, 0.55], [-15, 0.6, 0.45]]) add(sph(s, '#6a6258', 6, 5), x, s * 0.5, z).scale.y = 0.6;        // pelusas
+  for (const [x, z] of [[-5.2, 0.2], [1.8, 2.2], [8.4, 0.6], [4.4, 1.5], [-9.6, 1.1]]) add(box(0.22, 0.14, 0.2, '#d9a441'), x, 0.07, z);                              // migas
+  const fill = new THREE.PointLight('#8a7fd0', 6, 20, 1.2); fill.position.set(0, 6, 3); root.add(fill);
+  return { root, from: holes[0], to: holes[1] };
 }
 
 // ---------- montaje ----------
@@ -421,5 +482,6 @@ export function buildLevels(scene) {
     const root = new THREE.Group(); scene.add(root); root.visible = i === 0;
     return Object.assign(Object.create(shared), make(kit(root)));
   });
-  return { ...shared, levels };
+  const troot = new THREE.Group(); scene.add(troot); troot.visible = false;
+  return { ...shared, levels, tunnel: tunnel(troot) };
 }
