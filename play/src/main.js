@@ -5,6 +5,7 @@ import { makeRoach, animRoach, makeGranny, makeSlipper, makeCat, animCat, makeCh
 import { Hud, INK, GOLD, CREAM } from './hud.js';
 import { drawCity, drawMoon, drawRoof, drawLogo, drawClouds, drawRoachSprite } from './art.js';
 import { Sfx } from './audio.js';
+import { VERSION } from './version.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (a) => a[Math.random() * a.length | 0];
@@ -22,6 +23,7 @@ const sfx = new Sfx();
 const scene = gfx.scene;
 const LV = buildLevels(scene);
 let world = LV.levels[0];
+if (matchMedia('(pointer: coarse)').matches) { LV.sun.shadow.mapSize.set(1024, 1024); } // sombras más ligeras en el móvil
 
 const CARRY_MAX = 3, VISION = 10.5, VISION_HALF = 0.6, ROACH_R = 0.55, GRANNY_R = 1.35;
 const FLY_TIME = 1.6, WINGS_MAX = 3; // segundos que dura un vuelo y alas (vuelos) que se pueden acumular
@@ -115,17 +117,30 @@ const st = {
 };
 // Pantalla táctil: palanca flotante a la izquierda (a fondo = correr), botón de salto/vuelo y botón de soltar
 // a la derecha. Los botones pulsan las mismas «teclas» que el teclado, así el juego no distingue.
-const touch = { on: matchMedia('(pointer: coarse)').matches, stick: null, mx: 0, my: 0, mag: 0, a: null, bT: 0, zones: [], safe: { l: 0, r: 0, b: 0 } };
-const STICK_R = 26;
+const touch = { on: matchMedia('(pointer: coarse)').matches, stick: null, mx: 0, my: 0, mag: 0, a: null, bT: 0, used: false, zones: [], safe: { l: 0, r: 0, b: 0 }, lefty: localStorage.getItem('srak-l-zit.zurdo') === '1' };
+const STICK_R = 27;
 const say2 = (desk, tap) => (touch.on ? tap : desk); // texto según se juegue con teclado o con el dedo
-const padA = () => ({ x: hud.W - 36 - touch.safe.r, y: hud.H - 38 - touch.safe.b, r: 22 });
-const padB = () => ({ x: hud.W - 86 - touch.safe.r, y: hud.H - 24 - touch.safe.b, r: 15 });
+// los mandos cambian de lado para zurdos
+const side = (fromEdge) => (touch.lefty ? fromEdge + touch.safe.l : hud.W - fromEdge - touch.safe.r);
+const padA = () => ({ x: side(38), y: hud.H - 44 - touch.safe.b, r: 22 });
+const padB = () => ({ x: side(90), y: hud.H - 34 - touch.safe.b, r: 13 });
+const stickHome = () => ({ x: touch.lefty ? hud.W - 46 - touch.safe.r : 46 + touch.safe.l, y: hud.H - 46 - touch.safe.b });
+const buzz = (ms) => { if (touch.on) navigator.vibrate?.(ms); }; // vibración, donde el teléfono la tenga
+
+// ---------- aplicación instalable: partida guardada, instalación y pantalla encendida ----------
+const SAVE = 'srak-l-zit.save';
+const app = { install: null, reg: null, update: null, updating: false, told: false, standalone: matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone === true, ios: /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1), wake: null };
+const loadSave = () => { try { return JSON.parse(localStorage.getItem(SAVE)); } catch { return null; } };
+async function keepAwake() { // que la pantalla no se apague a media escena
+  if (app.wake || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+  try { app.wake = await navigator.wakeLock.request('screen'); app.wake.addEventListener('release', () => { app.wake = null; }); } catch { /* sin permiso o en ahorro de batería */ }
+}
 const cam = new THREE.Vector3(-8, 0, 3);
 const keys = new Set(), pressed = new Set();
 const floaters = [];
 const cine = { steps: null, i: 0, t: 0, done: null };
 
-function say(msg, t = 2.6) { st.msg = msg; st.msgT = t; }
+function say(msg, t = 2.6) { st.msg = msg; st.msgT = t; st.msgDur = t; }
 function gsay(msg, t = 1.8) { G.say = msg; G.sayT = t; }
 function floater(text, x, z, color = GOLD, scale = 1, h = 1.6) { floaters.push({ text, x, z, h, color, scale, t: 0, dur: 1.2 }); }
 function addScore(n, label, x, z, color = GOLD) {
@@ -198,12 +213,22 @@ function setupNight(n) {
   C.forEach((c, i) => { c.on = i < (p.chicks || 0); c.mesh.visible = c.on; if (c.on) { [c.x, c.z] = world.chickSpots[i]; Object.assign(c, { state: 'wander', t: rand(1, 3), tx: c.x, tz: c.z, face: rand(-3, 3) }); } });
 }
 
-function startNight(n) { st.prepN = n; loadLevel(plan(n).lv); setupNight(n); st.mode = 'intro'; st.modeT = 0; }
+function startNight(n) {
+  st.prepN = n; loadLevel(plan(n).lv); setupNight(n); st.mode = 'intro'; st.modeT = 0;
+  localStorage.setItem(SAVE, JSON.stringify({ night: n, score: st.score, lives: st.lives })); // se retoma desde el principio de esta noche
+}
 function prep(n) { if (st.prepN !== n) { st.prepN = n; loadLevel(plan(n).lv); setupNight(n); } }
 
 function startGame() {
+  localStorage.removeItem(SAVE);
   Object.assign(st, { lives: 3, score: 0, combo: 1, tut: 0, prepN: null });
   goNight(1);
+}
+
+function continueGame() {
+  const sv = loadSave(); if (!sv) return startGame();
+  Object.assign(st, { lives: Math.max(1, sv.lives), score: sv.score, combo: 1, tut: 9, prepN: null, introSeen: true });
+  startNight(sv.night); st.irisIn = 0.55;
 }
 
 // Pasa a la noche n; si cambia de sitio, antes van el plano de la casa y la presentación del lugar.
@@ -234,7 +259,7 @@ const DEATHS = {
 function killRoach(cause) {
   if (!R.alive || R.inv > 0) return;
   Object.assign(R, { alive: false, respawn: 2.1, carry: 0, vx: 0, vz: 0, vy: 0, flying: false, air: 0, wing: 0, cause });
-  st.lives--; st.detect = 0; st.combo = 1; st.shake = 0.5; st.flash = 0.5; hitstop(0.14); sfx.squash();
+  st.lives--; st.detect = 0; st.combo = 1; st.shake = 0.5; st.flash = 0.5; hitstop(0.14); sfx.squash(); buzz([70, 40, 120]);
   burst(R.x, 0.3, R.z, '#a8521c', 14, 6, 5); burst(R.x, 0.3, R.z, '#ffd23f', 8, 4, 6);
   ring(R.x, R.z, 3, '#ffffff', 0.4, 0.6);
   roachMesh.userData.body.scale.set(1.3, 0.14, 1.3); roachMesh.userData.body.position.y = 0;
@@ -244,7 +269,7 @@ function killRoach(cause) {
 }
 
 function endRun(reason) {
-  st.mode = 'over'; st.modeT = 0; st.reason = reason; sfx.lose();
+  st.mode = 'over'; st.modeT = 0; st.reason = reason; sfx.lose(); localStorage.removeItem(SAVE);
   if (st.score > st.best.score) { st.best = { score: st.score, night: st.night }; localStorage.setItem('srak-l-zit.best', JSON.stringify(st.best)); }
 }
 
@@ -399,7 +424,7 @@ function updateRoach(dt) {
   if (src && R.carry < CARRY_MAX && R.air < 0.2) {
     R.fill += dt / src.rate;
     if (R.fill >= 1) {
-      R.fill = 0; R.carry++; sfx.sip(); burst(R.x, 0.6, R.z, '#ffd23f', 4, 2, 3); R.squash = 0.5; if (st.tut < 2) st.tut = 2;
+      R.fill = 0; R.carry++; sfx.sip(); buzz(8); burst(R.x, 0.6, R.z, '#ffd23f', 4, 2, 3); R.squash = 0.5; if (st.tut < 2) st.tut = 2;
       if (src.high && !src.tasted) { src.tasted = true; addScore(25, '¡Zit de altura!', R.x, R.z, '#9be7a0'); sfx.bonus(); }
       if (src.amount !== undefined && --src.amount <= 0) { (src.oil || src.mesh).visible = false; floater('vacío', src.x, src.z, '#b9c8ff', 1, R.y + 1.6); } else if (src.amount && src.oil) src.oil.scale.set(src.amount / 3, 1, src.amount / 3);
     }
@@ -425,7 +450,7 @@ function updateRoach(dt) {
     R.deliverT -= dt;
     if (R.deliverT <= 0) {
       R.deliverT = 0.16; R.carry--; R.delivered++; st.stolen++; st.punchOil = 0.3;
-      sfx.coin(R.delivered + st.combo); addScore(10 * st.combo, '', 0, 0);
+      sfx.coin(R.delivered + st.combo); addScore(10 * st.combo, '', 0, 0); buzz(10);
       floater(`+${10 * st.combo}`, world.hole.x + rand(-0.4, 0.8), world.hole.z + rand(-0.6, 0.6));
       burst(world.hole.x + 0.3, 0.5, world.hole.z, '#ffd23f', 5, 2.5, 4.5); babies.forEach((b) => { b.hop = 0.4; });
       if (R.carry === 0) {
@@ -491,7 +516,7 @@ function canSeeRoach(range, half) {
 function alarm(text) {
   Object.assign(G, { state: 'hunt', lost: 0, throwCd: 0.7, sprayCd: 1.5, reroute: 0, lastX: R.x, lastZ: R.z });
   st.detect = 1; st.seen = true; gsay(text, 1.6); sfx.alarm(); st.flash = 0.25;
-  st.banner = { text, t: 0.9 }; hitstop(0.32); st.kick = 0.14;
+  st.banner = { text, t: 0.9 }; hitstop(0.32); st.kick = 0.14; buzz([30, 50, 30, 50, 60]);
 }
 
 function updateGranny(dt) {
@@ -613,7 +638,7 @@ function updateSlipper(dt) {
     marker.visible = true; marker.position.set(S.to.x, S.to.y - 0.08, S.to.z); marker.scale.setScalar(0.35 + k * 0.95);
     marker.material.color.set('#ff2d2d'); marker.material.opacity = 0.3 + 0.3 * Math.sin(st.clock * 30);
     if (k >= 1) {
-      S.st = 'landed'; S.t = 0; slipMesh.rotation.set(0, rand(0, 6), 0); sfx.slap(); st.shake = Math.max(st.shake, 0.3); hitstop(0.05);
+      S.st = 'landed'; S.t = 0; slipMesh.rotation.set(0, rand(0, 6), 0); sfx.slap(); buzz(25); st.shake = Math.max(st.shake, 0.3); hitstop(0.05);
       burst(S.to.x, S.to.y, S.to.z, '#e9dcc0', 12, 6, 3.5); ring(S.to.x, S.to.z, 2.6, '#ffffff', 0.35, 0.6);
       const d = dist(R.x, R.z, S.to.x, S.to.z);
       const level = Math.abs(R.y + 0.15 - S.to.y) < 1.2; // misma superficie
@@ -959,7 +984,7 @@ function pointer(x, z, label, color) {
 
 function toast(msg) { // aviso bajo la barra de la noche
   const lines = hud.wrap(msg, Math.min(hud.W - 60, 250)), w = Math.max(...lines.map((l) => hud.width(l))) + 34, h = lines.length * 10 + 10;
-  const x = Math.round(hud.W / 2 - w / 2), y = 42 + Math.round(Math.max(0, 0.15 - (2.6 - st.msgT)) * -40);
+  const x = Math.round(hud.W / 2 - w / 2), y = 42 + Math.round(clamp(st.msgT - (st.msgDur - 0.15), 0, 0.15) * -40); // entra deslizándose desde arriba
   hud.plate(x, y, w, h);
   hud.rect(x + 6, y + (h >> 1) - 5, 9, 10, INK); hud.rect(x + 7, y + (h >> 1) - 4, 7, 8, GOLD); hud.text('!', x + 11, y + (h >> 1), { color: INK, outline: null });
   lines.forEach((l, i) => hud.text(l, x + 12 + w / 2, y + 9 + i * 10, { color: CREAM, outline: null }));
@@ -1011,25 +1036,23 @@ const pxr = (a, b, w, h, c) => hud.rect(a, b, w, h, c);
 const zone = (x, y, w, h, act) => touch.zones.push({ x, y, w, h, act }); // zona tocable de este fotograma
 
 function drawTouch() {
-  const { W, H } = hud, t = st.clock, A = padA(), B = padB(), wings = st.plan.wings;
-  // palanca: aparece donde se apoya el pulgar; hasta entonces, una guía tenue en su esquina
-  const s = touch.stick, bx = s ? s.ox : 44 + touch.safe.l, by = s ? s.oy : H - 44 - touch.safe.b, run = !!s && touch.mag > 0.9;
-  hud.disc(bx, by, STICK_R, s ? 'rgba(11,11,18,0.4)' : 'rgba(11,11,18,0.22)');
-  hud.ring(bx, by, STICK_R, run ? GOLD : s ? 'rgba(253,246,227,0.8)' : 'rgba(253,246,227,0.35)'); hud.ring(bx, by, STICK_R - 1, run ? '#c98a00' : 'rgba(11,11,18,0.5)');
-  if (!s) for (const [ax, ay, ang] of [[0, -17, -Math.PI / 2], [0, 17, Math.PI / 2], [-17, 0, Math.PI], [17, 0, 0]]) hud.arrow(bx + ax, by + ay, ang, 'rgba(253,246,227,0.45)', 2);
-  const kx = bx + (s ? touch.mx * touch.mag * STICK_R : 0), ky = by + (s ? touch.my * touch.mag * STICK_R : 0);
-  hud.disc(kx + 1, ky + 2, 11, 'rgba(4,3,14,0.4)'); hud.disc(kx, ky, 11, INK); hud.disc(kx, ky, 10, run ? '#c98a00' : '#8f876c'); hud.disc(kx, ky - 1, 9, run ? GOLD : '#f4eedc'); hud.disc(kx - 2, ky - 4, 3, 'rgba(255,255,255,0.7)');
-  if (run) hud.text('correr', bx, by - STICK_R - 8, { color: GOLD });
-  // botón azul: saltar; en el aire, dejarlo pulsado vuela mientras queden alas
+  const { W, H } = hud, t = st.clock, A = padA(), B = padB(), wings = st.plan.wings, home = stickHome();
+  // palanca: una bandeja de latón que aparece bajo el pulgar, con la tapa de un tajín por pomo
+  const s = touch.stick, bx = s ? s.ox : home.x, by = s ? s.oy : home.y, run = !!s && touch.mag > 0.9;
+  hud.tray(bx, by, STICK_R, s ? 0.85 : 0.45);
+  if (!s) for (const [ax, ay, ang] of [[0, -18, -Math.PI / 2], [0, 18, Math.PI / 2], [-18, 0, Math.PI], [18, 0, 0]]) hud.arrow(bx + ax, by + ay, ang, 'rgba(253,246,227,0.7)', 2);
+  hud.g.globalAlpha = s ? 1 : 0.7; hud.tajine(bx + (s ? touch.mx * touch.mag * STICK_R : 0), by + (s ? touch.my * touch.mag * STICK_R : 0), run); hud.g.globalAlpha = 1;
+  if (run) hud.text('correr', bx, by - STICK_R - 9, { color: GOLD });
+  else if (!touch.used) hud.text('mover', bx, by - STICK_R - 9, { color: CREAM });
+  // el tarbouch: saltar; en el aire, dejarlo pulsado vuela mientras queden alas
   const down = touch.a !== null;
-  hud.button(A.x, A.y, A.r, { color: '#3d5fd0', light: '#8fb0ff', dark: '#1f2f7a', down });
-  hud.icon('wing', A.x - 4, A.y - 7 + (down ? 1 : 0), '#ffffff', '#1f2f7a'); hud.text(wings ? 'volar' : 'saltar', A.x, A.y + 7 + (down ? 1 : 0), { color: '#ffffff', outline: '#1f2f7a' });
-  if (R.fuel > 0) hud.ring(A.x, A.y, A.r + 3, '#7dd3fc', R.fuel / FLY_TIME);
+  hud.fez(A.x, A.y, A.r, down, t);
+  if (R.fuel > 0) { hud.ring(A.x, A.y, A.r + 3, '#7dd3fc', R.fuel / FLY_TIME); hud.ring(A.x, A.y, A.r + 4, '#e0f6ff', R.fuel / FLY_TIME); }
+  hud.text(wings ? 'volar' : 'saltar', A.x, A.y + A.r + 8, { color: CREAM });
   if (wings) for (let i = 0; i < WINGS_MAX; i++) hud.wing(A.x - 14 + i * 10, A.y - A.r - 11, i < R.wings);
-  // botón dorado: soltar una gota
+  // la gota: soltar zit
   const has = R.carry > 0; touch.bT = Math.max(0, touch.bT - 0.016);
-  hud.button(B.x, B.y, B.r, has ? { color: '#e0a010', light: '#ffe98a', dark: '#7a4f00', down: touch.bT > 0 } : { color: '#4a4660', light: '#6f6a84', dark: '#2a2740', down: false });
-  hud.drop(B.x, B.y - 5, GOLD, !has); hud.text('soltar', B.x, B.y - B.r - 7, { color: has ? CREAM : '#7f79a8' });
+  hud.oilDrop(B.x, B.y, B.r, has, touch.bT > 0); hud.text('soltar', B.x, B.y + B.r + 8, { color: has ? CREAM : '#7f79a8' });
   // ruido y pausa
   hud.plate(W / 2 - 14, H - 18 - touch.safe.b, 28, 16); hud.noise(W / 2 - 9, H - 16 - touch.safe.b, !R.alive ? 0 : R.noise > 7 ? 3 : R.noise > 3 ? 1 : 0);
   const px = W - 21 - touch.safe.r, py = 47;
@@ -1083,6 +1106,7 @@ function drawPlayHud() {
     if (st.tut === 0) { msg = 'Cruza la cocina y busca zit. La flecha te guía'; if (dist(R.x, R.z, world.hole.x, world.hole.z) > 7) st.tut = 1; }
     else if (st.tut === 2 && R.carry > 0) msg = 'Lleva el zit a tu agujero';
   }
+  if (!msg && app.update && !app.told && st.mode === 'play') { app.told = true; say(say2('Hay una versión nueva: pulsa U en la pausa para actualizar', 'Hay una versión nueva: actualiza desde la pausa'), 4); }
   if (msg) toast(msg);
 }
 
@@ -1142,13 +1166,17 @@ function drawCards() {
     hud.rect(0, 0, W, H, 'rgba(6,7,18,0.62)');
     const w = Math.min(W - 16, 250), x = Math.round(cx - w / 2), y = Math.round(H * 0.2);
     hud.panel(x, y, w, 128); hud.ribbon('PAUSA', cx, y - 9, { scale: 2, color: '#2b3a8a', dark: '#161f55', light: '#5a6ad0' });
+    if (app.update) { const uw = 150, ux = Math.round(cx - uw / 2), uy = y + 134; hud.plate(ux, uy, uw, 18, { tone: 'red' }); hud.text(say2('U · ACTUALIZAR A LA NUEVA VERSIÓN', 'ACTUALIZAR A LA NUEVA VERSIÓN'), cx, uy + 9, { color: GOLD, outline: null }); zone(ux, uy - 3, uw, 24, applyUpdate); }
     if (touch.on) { // en el móvil: cómo se juega y dos botones grandes
       [['palanca', 'moverse · a fondo, correr'], ['botón azul', 'saltar · dejarlo pulsado: volar'], ['botón dorado', 'soltar una gota de zit']].forEach(([a, b], i) => {
         hud.text(a, x + 16, y + 28 + i * 14, { align: 'left', color: GOLD, outline: null }); hud.text(b, x + 16 + 76, y + 28 + i * 14, { align: 'left', color: CREAM, outline: null });
       });
-      const bw = (w - 36) / 2, by = y + 78;
-      for (const [i, label, act] of [[0, 'SEGUIR', () => { st.paused = false; }], [1, sfx.muted ? 'SONIDO: NO' : 'SONIDO: SÍ', () => sfx.toggleMute()]]) {
-        const bx = x + 12 + i * (bw + 12); hud.plate(bx, by, bw, 34, { tone: i ? 'blue' : 'red' }); hud.text(label, bx + bw / 2, by + 17, { color: CREAM, outline: null }); zone(bx, by, bw, 34, act);
+      const bw = Math.floor((w - 40) / 3), by = y + 76;
+      const flip = () => { touch.lefty = !touch.lefty; localStorage.setItem('srak-l-zit.zurdo', touch.lefty ? '1' : '0'); };
+      for (const [i, top, label, act] of [[0, '', 'SEGUIR', () => { st.paused = false; }], [1, 'sonido', sfx.muted ? 'NO' : 'SÍ', () => sfx.toggleMute()], [2, 'mano', touch.lefty ? 'ZURDA' : 'DIESTRA', flip]]) {
+        const bx = x + 12 + i * (bw + 8); hud.plate(bx, by, bw, 38, { tone: i ? 'blue' : 'red' });
+        if (top) hud.text(top, bx + bw / 2, by + 12, { color: SOFT, outline: null });
+        hud.text(label, bx + bw / 2, by + (top ? 25 : 19), { color: CREAM, outline: null }); zone(bx, by, bw, 38, act);
       }
     } else {
       [['WASD', 'moverse'], ['SHIFT', 'correr (hace ruido)'], ['ESP', 'saltar · en el aire, mantener: volar'], ['E', 'soltar una gota de zit'], ['M', 'silenciar'], ['P', 'seguir jugando']].forEach(([key, what], i) => {
@@ -1180,12 +1208,25 @@ function drawTitle() {
   const dy = cy + half + 34;
   if (T > 3.4) for (let i = -7; i <= 7; i++) if (Math.abs(i) < (T - 3.4) * 20) hud.rect(cx + i * 9 - 1, dy + (i % 2 ? 1 : 0), 3, 3, i % 2 ? '#3fa7d6' : BORDER_C);
   if (T > 3.7) hud.text('la cucaracha que roba el aceite'.slice(0, Math.floor((T - 3.7) * 36)), cx, dy + 13, { color: '#ffd9a0' });
-  if (T > 4.8) { // botón de empezar: una placa con su tecla
-    const bob = Math.round(Math.sin(t * 3) * 1.5), w = touch.on ? 126 : 104, x = Math.round(cx - w / 2), y = H - 66 + bob;
-    hud.plate(x, y, w, 22);
-    if (touch.on) hud.text('TOCA PARA EMPEZAR', cx, y + 11, { color: Math.floor(t * 2) % 2 ? CREAM : GOLD, outline: null });
-    else { const kw = hud.keycap('ENTER', x + 7, y + 4, true, Math.floor(t * 2) % 2); hud.text('empezar', x + 12 + kw, y + 10, { align: 'left', color: CREAM, outline: null }); }
+  if (T > 4.8) {
+    const bob = Math.round(Math.sin(t * 3) * 1.5), y = H - 66 + bob, blink = Math.floor(t * 2) % 2, sv = loadSave();
+    const plate = (x, w, label, key, act, strong) => { // botón de portada: se toca o se pulsa su tecla
+      hud.plate(x, y, w, 22, { tone: strong ? 'red' : 'blue' });
+      if (touch.on) hud.text(label, x + w / 2, y + 11, { color: strong && blink ? GOLD : CREAM, outline: null });
+      else { const kw = hud.keycap(key, x + 7, y + 4, true, strong && blink); hud.text(label, x + 12 + kw, y + 10, { align: 'left', color: CREAM, outline: null }); }
+      zone(x, y - 4, w, 30, act);
+    };
+    if (sv) { // hay partida a medias
+      const a = `CONTINUAR · NOCHE ${sv.night}`, b = 'NUEVA PARTIDA', wa = hud.width(a) + (touch.on ? 20 : 62), wb = hud.width(b) + (touch.on ? 20 : 34), x = Math.round(cx - (wa + wb + 8) / 2);
+      plate(x, wa, a, 'ENTER', continueGame, true); plate(x + wa + 8, wb, b, 'N', startGame, false);
+    } else { const label = touch.on ? 'TOCA PARA EMPEZAR' : 'empezar', w = hud.width(label) + (touch.on ? 24 : 62); plate(Math.round(cx - w / 2), w, label, 'ENTER', startGame, true); }
     hud.text(st.best.score ? `récord: ${st.best.score} puntos · noche ${st.best.night}` : 'una noche en Marrakech', cx, H - 34, { color: '#b9b6e6' });
+    // instalar como aplicación: botón donde el navegador lo ofrece; en iPhone, la pista de cómo hacerlo
+    if (app.install) { const w = 66, x = W - w - 4 - touch.safe.r; hud.plate(x, 4, w, 18); hud.text('INSTALAR', x + w / 2, 13, { color: GOLD, outline: null }); zone(x - 4, 0, w + 8, 28, () => { app.install.prompt(); app.install = null; }); }
+    else if (app.ios && touch.on && !app.standalone) hud.text('iPhone: Compartir > Añadir a pantalla de inicio', cx, H - 22, { color: '#8fa0d8' });
+    if (app.update) { const w = 126, x = 4 + touch.safe.l; hud.plate(x, 4, w, 18, { tone: 'red' }); hud.text('NUEVA VERSIÓN · ACTUALIZAR', x + w / 2, 13, { color: Math.floor(t * 2) % 2 ? GOLD : CREAM, outline: null }); zone(x - 4, 0, w + 8, 28, applyUpdate); }
+    else if (st.offline) hud.text('sin conexión', 6 + touch.safe.l, 10, { align: 'left', color: '#8fa0d8' });
+    hud.text(`v${VERSION}`, W - 5 - touch.safe.r, H - 22, { align: 'right', color: '#5a5690' });
   }
 }
 
@@ -1340,11 +1381,11 @@ function resize() {
 
 // ---------- pantalla táctil y ratón ----------
 function confirm() { // lo mismo que ENTER en menús y tarjetas
-  if (st.mode === 'title' || (st.mode === 'over' && st.modeT > 1)) startGame();
+  if (st.mode === 'title') { if (st.clock - st.titleT0 > 4.8 && loadSave()) continueGame(); else startGame(); }
+  else if (st.mode === 'over' && st.modeT > 1) startGame();
   else if (st.mode === 'clear' && st.modeT > 2.9) nextNight();
   else if (st.mode === 'intro' && st.modeT > 0.6) st.mode = 'play';
 }
-const near = (p, x, y, extra) => Math.hypot(x - p.x, y - p.y) < p.r + extra;
 
 addEventListener('pointerdown', (e) => {
   sfx.init();
@@ -1358,9 +1399,13 @@ addEventListener('pointerdown', (e) => {
   if (z) { z.act(); return; }
   if (st.mode !== 'play' || st.paused) { if (st.mode !== 'cine' && !st.paused) confirm(); return; }
   if (!isTouch) return;
-  if (near(padA(), x, y, 12)) { touch.a = e.pointerId; keys.add('Space'); pressed.add('Space'); }
-  else if (near(padB(), x, y, 10)) { pressed.add('KeyE'); touch.bT = 0.15; }
-  else if (x < hud.W * 0.55 && !touch.stick) { touch.stick = { id: e.pointerId, ox: clamp(x, STICK_R + 4, hud.W), oy: clamp(y, 50, hud.H - STICK_R - 4) }; touch.mag = 0; }
+  keepAwake();
+  const A = padA(), B = padB(), stickSide = touch.lefty ? x > hud.W * 0.45 : x < hud.W * 0.55;
+  const dA = Math.hypot(x - A.x, y - A.y), dB = Math.hypot(x - B.x, y - B.y);
+  if (!stickSide && y > hud.H * 0.42 && Math.min(dA, dB) < 62) { // en la esquina de los mandos gana el botón más cercano: no hace falta atinar
+    if (dA - A.r <= dB - B.r) { touch.a = e.pointerId; keys.add('Space'); pressed.add('Space'); buzz(8); }
+    else { pressed.add('KeyE'); touch.bT = 0.15; buzz(R.carry > 0 ? 12 : 4); }
+  } else if (stickSide && !touch.stick) { touch.stick = { id: e.pointerId, ox: clamp(x, STICK_R + 4, hud.W - STICK_R - 4), oy: clamp(y, 50, hud.H - STICK_R - 4) }; touch.mag = 0; touch.used = true; }
 });
 addEventListener('pointermove', (e) => {
   const s = touch.stick; if (!s || e.pointerId !== s.id) return;
@@ -1374,6 +1419,31 @@ const release = (e) => {
 };
 addEventListener('pointerup', release); addEventListener('pointercancel', release);
 addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ciclo de vida de la aplicación: al salir se pausa y calla; al volver, recupera sonido y pantalla encendida
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { if (st.mode === 'play') st.paused = true; keys.clear(); touch.stick = null; touch.a = null; touch.mag = 0; sfx.ctx?.suspend(); }
+  else { sfx.ctx?.resume(); keepAwake(); last = performance.now(); }
+});
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); app.install = e; });
+addEventListener('appinstalled', () => { app.install = null; app.standalone = true; });
+addEventListener('online', () => { st.offline = false; }); addEventListener('offline', () => { st.offline = true; });
+st.offline = !navigator.onLine;
+if (navigator.audioSession) navigator.audioSession.type = 'playback'; // en iPhone, que suene aunque esté el interruptor de silencio
+navigator.storage?.persist?.().catch(() => {});                       // que el sistema no borre la partida guardada
+// Service worker: guarda el juego para jugar sin conexión. Una versión nueva se descarga en segundo plano y se queda
+// esperando; el juego lo avisa con un botón y solo al aceptarlo se activa y se recarga, sin cortar la partida.
+if ('serviceWorker' in navigator) {
+  const sw = navigator.serviceWorker, waiting = (reg) => { if (reg.waiting && sw.controller) app.update = reg.waiting; };
+  addEventListener('load', () => sw.register(location.search.includes('pwa=prod') ? 'sw.js?prod' : 'sw.js').then((reg) => {
+    app.reg = reg; waiting(reg);
+    reg.addEventListener('updatefound', () => { const w = reg.installing; w?.addEventListener('statechange', () => { if (w.state === 'installed') waiting(reg); }); });
+    setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000); // y se vuelve a mirar cada media hora
+  }).catch(() => {}));
+  sw.addEventListener('controllerchange', () => { if (app.updating) location.reload(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') app.reg?.update().catch(() => {}); });
+}
+function applyUpdate() { if (!app.update) return; app.updating = true; app.update.postMessage('SKIP_WAITING'); app.update = null; }
 addEventListener('orientationchange', () => setTimeout(resize, 200));
 
 addEventListener('resize', resize);
@@ -1383,7 +1453,9 @@ addEventListener('keydown', (e) => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   if (touch.on) { touch.on = false; resize(); } // si aparece un teclado, vuelven las teclas
-  keys.add(e.code); pressed.add(e.code); sfx.init();
+  keys.add(e.code); pressed.add(e.code); sfx.init(); keepAwake();
+  if (e.code === 'KeyN' && st.mode === 'title') startGame();
+  if (e.code === 'KeyU' && (st.mode === 'title' || st.paused)) applyUpdate();
   if (e.code === 'KeyM') sfx.toggleMute();
   if ((e.code === 'Escape' || e.code === 'KeyP') && st.mode === 'play') st.paused = !st.paused;
   if (e.code === 'Enter' || (e.code === 'Space' && st.mode !== 'play')) {
@@ -1394,4 +1466,4 @@ addEventListener('keydown', (e) => {
 resize();
 loadLevel(0); resetRoach();
 requestAnimationFrame(frame);
-window.game = { sfx, touch, st, R, G, K, C, S, P, LV, gfx, keys, pressed, slicks, cine, get world() { return world; }, startGame, startNight, goNight, playEnding, update, killRoach, setLight, clearNight, endCine };
+window.game = { sfx, touch, app, applyUpdate, st, R, G, K, C, S, P, LV, gfx, keys, pressed, slicks, cine, get world() { return world; }, startGame, startNight, goNight, playEnding, update, killRoach, setLight, clearNight, endCine };

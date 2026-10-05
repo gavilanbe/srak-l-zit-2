@@ -268,11 +268,48 @@ export class Hud {
     for (let i = 0; i < n * k; i++) { const a = -Math.PI / 2 + i / n * Math.PI * 2; this.g.fillRect(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 1, 1); }
   }
 
-  // botón redondo de pantalla táctil, con relieve; down lo hunde
-  button(cx, cy, r, { color, light, dark, down = false }) {
-    cx = Math.round(cx); cy = Math.round(cy) + (down ? 1 : 0);
-    this.disc(cx + 1, cy + 3, r, 'rgba(4,3,14,0.45)'); this.disc(cx, cy, r, INK); this.disc(cx, cy, r - 1, dark); this.disc(cx, cy - (down ? 0 : 2), r - 2, color);
-    this.g.fillStyle = light; for (let dy = -(r - 3); dy < -(r >> 1); dy++) { const dx = Math.round(Math.sqrt((r - 3) ** 2 - dy * dy) * 0.7); this.g.fillRect(cx - dx, cy + dy - (down ? 0 : 2), dx * 2, 1); }
+// ---- mandos táctiles, con las cosas de la casa ----
+  // bandeja de latón repujada: la base de la palanca
+  tray(cx, cy, r, alpha) {
+    const g = this.g; cx = Math.round(cx); cy = Math.round(cy); g.globalAlpha = alpha;
+    this.disc(cx + 1, cy + 3, r, 'rgba(4,3,14,0.5)'); this.disc(cx, cy, r, INK); this.disc(cx, cy, r - 1, BR_LO); this.disc(cx, cy, r - 2, BR); this.disc(cx, cy, r - 4, BR_LO); this.disc(cx, cy, r - 5, '#c9a24a');
+    this.ring(cx, cy, r - 3, BR_HI, 0.3); this.ring(cx, cy, r - 9, BR_DK); this.ring(cx, cy, r - 15, BR_DK);
+    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, x = Math.round(cx + Math.cos(a) * (r - 12)), y = Math.round(cy + Math.sin(a) * (r - 12)); this.rect(x - 1, y - 1, 3, 3, BR_DK); this.rect(x, y, 1, 1, i % 2 ? '#2a9d8f' : '#2b5fa8'); }
+    g.globalAlpha = 1;
+  }
+
+  // la tapa de un tajín vista desde arriba: el pomo de la palanca
+  tajine(cx, cy, run) {
+    cx = Math.round(cx); cy = Math.round(cy);
+    if (run) { this.ring(cx, cy, 14, GOLD); this.ring(cx, cy, 13, '#fff3b0'); }
+    this.disc(cx + 1, cy + 3, 11, 'rgba(4,3,14,0.45)'); this.disc(cx, cy, 11, INK); this.disc(cx, cy, 10, '#7a3414'); this.disc(cx, cy - 1, 9, '#c4622d'); this.disc(cx, cy - 1, 6, '#d9774a');
+    this.ring(cx, cy - 1, 7, '#a84c22'); this.disc(cx, cy - 2, 3, '#7a3414'); this.disc(cx, cy - 3, 2, '#f0a878'); this.rect(cx - 6, cy - 6, 3, 2, 'rgba(255,255,255,0.45)');
+  }
+
+  // el tarbouch de la cucaracha: botón de saltar y volar. La borla se balancea y da un latigazo al pulsar
+  fez(cx, cy, r, down, t) {
+    cx = Math.round(cx); cy = Math.round(cy) + (down ? 2 : 0);
+    this.disc(cx + 1, cy + 4, r, 'rgba(4,3,14,0.5)'); this.disc(cx, cy, r, INK); this.disc(cx, cy, r - 1, '#6e0a12'); this.disc(cx, cy - (down ? 0 : 2), r - 2, '#c1121f');
+    this.disc(cx, cy - (down ? 1 : 3), r - 8, '#e0303c'); this.ring(cx, cy - (down ? 1 : 3), r - 8, '#9a0e18');
+    this.g.fillStyle = 'rgba(255,255,255,0.35)'; for (let dy = -(r - 4); dy < -(r >> 1); dy++) { const dx = Math.round(Math.sqrt((r - 4) ** 2 - dy * dy) * 0.6); this.g.fillRect(cx - dx, cy + dy - 2, dx * 2, 1); }
+    const a = 0.75 + Math.sin(t * 3) * 0.22 + (down ? 0.5 : 0), len = r - 3, ty = cy - 3;
+    for (let d = 0; d < len; d++) this.rect(cx + Math.cos(a) * d, ty + Math.sin(a) * d, 2, 2, INK);
+    const ex = Math.round(cx + Math.cos(a) * len), ey = Math.round(ty + Math.sin(a) * len);
+    this.rect(ex - 2, ey - 1, 5, 7, INK); this.rect(ex - 1, ey, 3, 2, GOLD); this.disc(cx, ty, 2, INK);
+  }
+
+  // una gota de zit: botón de soltar. Apagada si no se lleva aceite
+  oilDrop(cx, cy, r, on, down) {
+    cx = Math.round(cx); cy = Math.round(cy) + (down ? 2 : 0);
+    const tip = cy - r - 9, shape = (grow, color, ox = 0, oy = 0) => {
+      this.g.fillStyle = color;
+      for (let y = tip - grow; y <= cy + r + grow; y++) {
+        const half = y < cy ? Math.round((y - tip + grow) / (cy - tip) * (r + grow) * 0.98) : Math.round(Math.sqrt(Math.max(0, (r + grow) ** 2 - (y - cy) ** 2)));
+        this.g.fillRect(cx - half + ox, y + oy, half * 2 + 1, 1);
+      }
+    };
+    shape(0, 'rgba(4,3,14,0.45)', 1, 3); shape(1, INK); shape(0, on ? '#b87a00' : '#2a2740'); shape(-2, on ? '#f2b705' : '#4a4660'); shape(-5, on ? '#ffd23f' : '#5a5674', -1, -1);
+    this.rect(cx - Math.round(r * 0.45), cy - 2, 2, Math.round(r * 0.6), on ? '#fff6d6' : '#7f79a8'); this.rect(cx - Math.round(r * 0.45) + 1, cy - 5, 1, 2, on ? '#fff6d6' : '#7f79a8');
   }
 
   // cortinilla de iris: todo negro menos un círculo de radio r
