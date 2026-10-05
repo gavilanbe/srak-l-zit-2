@@ -155,7 +155,8 @@ export class Sfx {
     const fl = this.ctx.createBiquadFilter(); fl.type = 'lowpass'; fl.Q.value = 0.7;
     fl.frequency.setValueAtTime(1300, t); fl.frequency.linearRampToValueAtTime(Math.min(4200, 1800 + f * 2), t + 0.09);
     fl.connect(this._hold(t, vol, marc ? 0.012 : 0.045, dur, marc ? 0.07 : 0.13, this.bus.strings));
-    const oscs = [-9, 0, 8].map((c) => { const k = 2 ** (c / 1200); return this._osc('sawtooth', f * k, t, dur + 0.15, fl, null, from && from * k); });
+    const oscs = (this.lite ? [-8, 8] : [-9, 0, 8]).map((c) => { const k = 2 ** (c / 1200); return this._osc('sawtooth', f * k, t, dur + 0.15, fl, null, from && from * k); });
+    if (this.lite) return; // versión ligera: dos arcos, sin octava ni vibrato
     const up = this.ctx.createGain(); up.gain.value = 0.22; up.connect(fl); oscs.push(this._osc('sawtooth', f * 2.003, t, dur + 0.15, up, null, from && from * 2));
     if (dur > 0.3) this._vibrato(oscs, f, t, dur, 0.007);
   }
@@ -171,7 +172,7 @@ export class Sfx {
     const oscs = [this._osc('square', f * 0.997, t, dur + 0.12, fl, null, from), this._osc('square', f * 1.004, t, dur + 0.12, fl, null, from)];
     const hi = this.ctx.createGain(); hi.gain.value = 0.3; hi.connect(fl); oscs.push(this._osc('sawtooth', f * 2, t, dur + 0.12, hi, null, from && from * 2));
     const lfo = this.ctx.createOscillator(), d = this.ctx.createGain(); lfo.frequency.value = 6.2; d.gain.value = vol * 0.16; lfo.connect(d); d.connect(g.gain); lfo.start(t); lfo.stop(t + dur + 0.2);
-    if (dur > 0.35) this._vibrato(oscs, f, t, dur, 0.005, 5.2, 0.2);
+    if (dur > 0.35 && !this.lite) this._vibrato(oscs, f, t, dur, 0.005, 5.2, 0.2);
   }
 
   qanun(f, t, dur, vol) { // pulsado brillante; las notas largas se sostienen en trémolo
@@ -180,7 +181,7 @@ export class Sfx {
       fl.connect(this._env(at, v, 0.002, 0.34, this.bus.pluck)); this._osc('sawtooth', f, at, 0.36, fl); const h = this.ctx.createGain(); h.gain.value = 0.35; h.connect(fl); this._osc('square', f * 2, at, 0.36, h);
     };
     hit(t, vol);
-    for (let at = t + 0.09; at < t + dur - 0.05; at += 0.09) hit(at, vol * 0.55);
+    if (!this.lite) for (let at = t + 0.09; at < t + dur - 0.05; at += 0.09) hit(at, vol * 0.55);
   }
 
   oud(f, t, dur, vol, bright = 3000) { // cuerda pulsada grave: dos sierras y un filtro que se cierra

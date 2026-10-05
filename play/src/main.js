@@ -22,6 +22,7 @@ const QUERY = new URLSearchParams(location.search), PROMO = QUERY.has('promo');
 const gfx = new Gfx(document.getElementById('view'));
 const hud = new Hud(document.getElementById('hud'));
 const sfx = new Sfx();
+sfx.lite = matchMedia('(pointer: coarse)').matches; // en el móvil, instrumentos más ligeros para que no haya tirones
 const scene = gfx.scene;
 const LV = buildLevels(scene);
 let world = LV.levels[0];
@@ -337,7 +338,7 @@ function updateRoach(dt) {
   if (keys.has('ArrowUp') || keys.has('KeyW')) iy++;
   if (keys.has('ArrowDown') || keys.has('KeyS')) iy--;
   let pace = 1;
-  if (touch.stick && touch.mag > 0.2) { ix = touch.mx; iy = -touch.my; pace = touch.mag > 0.9 ? 1 : clamp(touch.mag / 0.75, 0.5, 1); } // la palanca es analógica
+  if (touch.stick && touch.mag > 0.12) { ix = touch.mx; iy = -touch.my; pace = touch.mag > 0.9 ? 1 : clamp(touch.mag / 0.75, 0.5, 1); } // la palanca es analógica
   const il = Math.hypot(ix, iy) || 1;
   let dx = (gfx.floorRight.x * ix + gfx.floorUp.x * iy) / il, dz = (gfx.floorRight.z * ix + gfx.floorUp.z * iy) / il;
   const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
@@ -1402,15 +1403,20 @@ addEventListener('pointerdown', (e) => {
   if (st.portrait) return;
   const z = touch.zones.find((q) => x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h);
   if (z) { z.act(); return; }
-  if (st.mode !== 'play' || st.paused) { if (st.mode !== 'cine' && !st.paused) confirm(); return; }
+  const steering = st.mode === 'play' || st.mode === 'intro'; // con la tarjeta de la noche delante ya se puede apoyar el pulgar
+  if (st.paused || !steering) { if (st.mode !== 'cine' && !st.paused) confirm(); return; }
+  if (st.mode === 'intro') confirm();
   if (!isTouch) return;
+  try { e.target.setPointerCapture?.(e.pointerId); } catch { /* el destino no admite captura */ } // que el «levantar» llegue aunque el dedo salga de la pantalla
   keepAwake();
   const A = padA(), B = padB(), stickSide = touch.lefty ? x > hud.W * 0.45 : x < hud.W * 0.55;
   const dA = Math.hypot(x - A.x, y - A.y), dB = Math.hypot(x - B.x, y - B.y);
   if (!stickSide && y > hud.H * 0.42 && Math.min(dA, dB) < 62) { // en la esquina de los mandos gana el botón más cercano: no hace falta atinar
     if (dA - A.r <= dB - B.r) { touch.a = e.pointerId; keys.add('Space'); pressed.add('Space'); buzz(8); }
     else { pressed.add('KeyE'); touch.bT = 0.15; buzz(R.carry > 0 ? 12 : 4); }
-  } else if (stickSide && !touch.stick) { touch.stick = { id: e.pointerId, ox: clamp(x, STICK_R + 4, hud.W - STICK_R - 4), oy: clamp(y, 50, hud.H - STICK_R - 4) }; touch.mag = 0; touch.used = true; }
+  } else if (stickSide) { // un toque nuevo siempre se queda la palanca, aunque la anterior no se hubiera soltado
+    touch.stick = { id: e.pointerId, ox: clamp(x, STICK_R + 4, hud.W - STICK_R - 4), oy: clamp(y, 50, hud.H - STICK_R - 4) }; touch.mag = 0; touch.used = true;
+  }
 });
 addEventListener('pointermove', (e) => {
   const s = touch.stick; if (!s || e.pointerId !== s.id) return;
@@ -1423,6 +1429,11 @@ const release = (e) => {
   if (e.pointerId === touch.a) { touch.a = null; keys.delete('Space'); }
 };
 addEventListener('pointerup', release); addEventListener('pointercancel', release);
+// red de seguridad: si no queda ningún dedo en la pantalla, no puede quedar nada pulsado
+const releaseAll = (e) => { if (e.touches.length === 0) { touch.stick = null; touch.mag = 0; touch.a = null; keys.delete('Space'); } };
+addEventListener('touchend', releaseAll); addEventListener('touchcancel', releaseAll);
+addEventListener('touchmove', (e) => e.preventDefault(), { passive: false }); // ni desplazamiento ni rebote de la página a media carrera
+addEventListener('gesturestart', (e) => e.preventDefault());                   // ni zoom con dos dedos en iPhone
 addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ciclo de vida de la aplicación: al salir se pausa y calla; al volver, recupera sonido y pantalla encendida

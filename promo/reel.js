@@ -48,10 +48,10 @@ const belgha = makeSlipper(); belgha.scale.setScalar(1.3); scene.add(belgha);
 // atrezo: la botella del golpe (cristal, aceite que baja, corcho y etiqueta) y la gota que se sirve a las crías
 const bottle = new THREE.Group(); scene.add(bottle);
 const oil = put(bottle, cyl(0.42, 0.42, 1.25, basic('#f2b705'), 12), 0, 0.68, 0); oil.castShadow = false;
-put(bottle, cyl(0.5, 0.5, 1.4, new THREE.MeshBasicMaterial({ color: '#bfe9d4', transparent: true, opacity: 0.28, depthWrite: false }), 12), 0, 0.72, 0);
+put(bottle, cyl(0.5, 0.5, 1.4, new THREE.MeshBasicMaterial({ color: '#bfe9d4', transparent: true, opacity: 0.2, depthWrite: false }), 12), 0, 0.72, 0);
 put(bottle, cyl(0.5, 0.52, 0.08, '#8fb8a4', 12), 0, 0.04, 0); put(bottle, cyl(0.18, 0.46, 0.42, '#9cc9b4', 12), 0, 1.62, 0); put(bottle, cyl(0.17, 0.17, 0.4, '#9cc9b4', 10), 0, 2.0, 0);
 put(bottle, cyl(0.16, 0.19, 0.26, '#8a5a2b', 8), 0, 2.3, 0); put(bottle, box(0.7, 0.62, 0.06, '#fdf6e3'), 0, 0.72, 0.5); put(bottle, box(0.7, 0.12, 0.07, '#c1121f'), 0, 0.92, 0.5); put(bottle, box(0.34, 0.2, 0.07, '#2d6a4f'), 0, 0.62, 0.5);
-const shine = put(bottle, box(0.07, 1.0, 0.07, basic('#ffffff')), -0.3, 0.75, 0.4); shine.castShadow = false;
+const shine = put(bottle, box(0.1, 1.0, 0.07, basic('#ffffff')), -0.3, 0.75, 0.42); shine.castShadow = false;
 const ringOil = put(scene, cyl(0.62, 0.62, 0.03, basic('#f2b705'), 14), 0, 0, 0); ringOil.castShadow = false;
 const serving = put(scene, sph(0.5, basic('#ffd23f'), 10, 8), 0, 0, 0); serving.castShadow = false;
 const slick = put(scene, cyl(0.95, 0.95, 0.03, basic('#f2b705'), 14), 0, 0, 0); slick.castShadow = false;
@@ -137,23 +137,27 @@ function heart(x, y, s, alpha) { c.globalAlpha = alpha; c.fillStyle = '#ff5a5a';
 // ══════════ planos ══════════
 const shots = [];
 const shot = (t0, t1, enter, step, over) => shots.push({ t0, t1, enter, step, over });
-const TABLE = 3.0, BX = -0.9, BZ = 2.6; // altura de la mesa de la cocina y dónde está la botella
+const TABLE = 3.0, BX = -1.8, BZ = 2.55; // altura de la mesa de la cocina y dónde está la botella
 
 // 1 ── el golpe: un solo plano, cámara baja que se acerca despacio ──────────────
 shot(0, AT.grito, () => { stage(COCINA); bottle.position.set(BX, TABLE, BZ); bottle.rotation.set(0, 0, 0); oil.scale.y = 1; oil.position.y = 0.68; R.phase = 0; }, (lt, k, dt) => {
-  bottle.visible = true; glow(1.6, 5.4, 6.5, 9, '#9db8ff');
-  const push = eio(seg(lt, 0, 3.4)), wide = eio(seg(lt, 5.6, 7.0));
-  cam(lerp(34, 22, k), 9, lerp(-0.9, -0.2, wide), TABLE + lerp(1.15, 0.95, wide), 2.4, lerp(lerp(3.3, 4.6, push), 3.5, wide));
-  shine.position.y = 0.75 + Math.sin(lt * 1.5) * 0.25; if (lt < 3.2 && rnd() < 0.12) burst(BX + (rnd() - 0.5) * 2.4, TABLE + 0.6 + rnd() * 2, BZ + (rnd() - 0.5), '#dfe7ff', 1, 0.15, 0.2, 1.4, 0.3);
-  // se asoma por detrás de la botella, mira a un lado y a otro, y sale
-  const peek = eo(seg(lt, 3.2, 3.9)), out = eio(seg(lt, 4.7, 5.7)), sip = seg(lt, 6.1, 8.3), leave = eio(seg(lt, 8.4, 9.3));
-  const hx = lerp(lerp(BX - 0.5, BX + 0.35, peek), BX + 1.5, out), hz = lerp(lerp(BZ - 1.0, BZ - 0.9, peek), BZ + 0.05, out);
-  const look = lt < 4.7 ? 1.2 + Math.sin((lt - 3.9) * 5) * (lt > 3.9 ? 0.5 : 0) : lerp(1.2, Math.PI, eio(seg(lt, 4.7, 5.5)));
+  bottle.visible = true;
+  // luz: la luna de relleno y un foco cálido de frente, para que el aceite brille y a ella se la vea bien
+  LV.sun.intensity = 2.6; LV.hemi.intensity = 2.1; gfx.post.uniforms.tint.value.set('#d6dcff'); glow(BX + 1.6, TABLE + 2.6, BZ + 3.4, 26, '#ffe2b0');
+  const push = eio(seg(lt, 0, 2.8)), wide = eio(seg(lt, 2.6, 3.8));
+  cam(lerp(30, 20, k), 9, lerp(BX + 0.1, BX + 1.25, wide), TABLE + lerp(1.15, 1.0, wide), BZ, lerp(lerp(3.6, 4.6, push), 3.15, wide));
+  shine.position.y = 0.75 + Math.sin(lt * 1.5) * 0.25; if (lt < 3 && rnd() < 0.12) burst(BX + (rnd() - 0.5) * 2.4, TABLE + 0.6 + rnd() * 2, BZ + (rnd() - 0.5), '#ffffff', 1, 0.15, 0.2, 1.4, 0.3);
+  // llega volando desde la derecha y aterriza en la mesa; mira a un lado y a otro; se acerca hasta tocar la botella con el morro
+  const fly = seg(lt, 3.0, 3.9), creep = eio(seg(lt, 5.0, 5.9)), sip = seg(lt, 6.1, 8.3), leave = eio(seg(lt, 8.4, 9.3));
+  const stop = BX + 2.2, land = BX + 3.0; // el morro queda justo fuera del cristal
+  const x = fly < 1 ? lerp(BX + 6.4, land, eo(fly)) : lerp(lerp(land, stop, creep), stop + 1.0, leave), y = TABLE + (fly < 1 ? (1 - eo(fly)) * 2.8 : 0) + arc(seg(lt, 8.5, 8.9), 0.35);
+  const look = lt < 3.9 ? Math.PI : lt < 5.0 ? Math.PI + Math.sin((lt - 3.9) * 6) * 0.55 : lerp(Math.PI, 0.5, leave);
   const carry = lt > 7.9 ? 3 : lt > 7.3 ? 2 : lt > 6.8 ? 1 : 0;
-  for (const at of [6.8, 7.3, 7.9]) if (lt >= at && lt - dt < at) burst(hx - 0.6, TABLE + 0.9, hz, '#ffd23f', 6, 2, 3, 0.5);
-  if (lt > 3.2) roach(lerp(hx, hx + 1.1, leave), TABLE + arc(seg(lt, 8.5, 8.9), 0.35), hz + leave * 0.5, lerp(look, 0.5, leave), { v: (lt > 4.7 && lt < 5.7) || leave > 0 && leave < 1 ? 4 : 0, tilt: sip > 0 && leave === 0 ? 0.42 + Math.sin(lt * 9) * 0.04 : 0, carry, scared: lt < 4.7 ? 0.6 : 0, squash: [6.8, 7.3, 7.9].some((a) => lt > a && lt < a + 0.15) ? 0.5 : 0, dt });
+  if (lt >= 3.9 && lt - dt < 3.9) burst(land, TABLE + 0.1, BZ, '#e6dcc4', 8, 3, 1.5, 0.4);
+  for (const at of [6.8, 7.3, 7.9]) if (lt >= at && lt - dt < at) burst(stop - 0.7, TABLE + 1.0, BZ + 0.3, '#ffd23f', 6, 2, 3, 0.5);
+  if (lt > 3.0) roach(x, y, BZ + 0.15 + leave * 0.4, look, { v: fly < 1 ? 8 : (creep > 0 && creep < 1) || (leave > 0 && leave < 1) ? 3 : 0, air: fly < 1 ? 1 : 0, tilt: sip > 0 && leave === 0 ? 0.26 + Math.sin(lt * 9) * 0.03 : 0, carry, scared: lt > 3.9 && lt < 5.0 ? 0.7 : 0, squash: (lt > 3.9 && lt < 4.1) || [6.8, 7.3, 7.9].some((a) => lt > a && lt < a + 0.15) ? 0.6 : 0, dt });
   oil.scale.y = lerp(1, 0.32, eio(sip)); oil.position.y = 0.055 + 0.625 * oil.scale.y;
-  // al irse le da con la gota: la botella se tambalea y cae
+  // al darse la vuelta le da con la gota: la botella se tambalea y cae hacia el otro lado
   const wob = seg(lt, 8.7, 9.35), fall = eio(seg(lt, 9.35, 9.6));
   bottle.rotation.z = Math.sin(lt * 26) * 0.09 * wob * (1 - fall) + fall * 1.5; bottle.position.x = BX - fall * 0.5;
 }, (lt) => { bars(eo(seg(lt, 0, 1.2))); flash(1 - lt / 0.9, '#000'); });
@@ -169,12 +173,12 @@ shot(AT.grito, AT.grito + 1.5, () => { stage(COCINA, 1); bottle.position.set(BX 
 
 shot(AT.grito + 1.5, AT.huida, () => { stage(COCINA, 1); bottle.position.set(BX - 0.5, TABLE, BZ); bottle.rotation.z = 1.5; ringOil.position.set(BX, TABLE + 0.02, BZ); }, (lt, k) => {
   bottle.visible = true; ringOil.visible = true; // foto fija: la han pillado con las manos en la masa
-  roach(BX + 2.6, TABLE, BZ + 0.5, 0.9, { scared: 1, carry: 3 });
-  cam(26, 13, BX + 2.2, TABLE + 0.75, BZ + 0.5, lerp(3.9, 4.2, k));
+  roach(BX + 3.0, TABLE, BZ + 0.5, 0.9, { scared: 1, carry: 3 });
+  cam(26, 13, BX + 2.6, TABLE + 0.75, BZ + 0.5, lerp(3.9, 4.2, k));
   gfx.post.uniforms.danger.value = 0.9;
 }, (lt) => {
   rect(0, 0, W, H, '#7a0a12', 0.28);
-  const p = screen(BX + 2.6, TABLE + 0.5, BZ + 0.5); c.save(); c.translate(p.x, p.y); c.globalAlpha = 0.13; c.fillStyle = '#fff'; // líneas de susto
+  const p = screen(BX + 3.0, TABLE + 0.5, BZ + 0.5); c.save(); c.translate(p.x, p.y); c.globalAlpha = 0.13; c.fillStyle = '#fff'; // líneas de susto
   for (let i = 0; i < 18; i++) { c.rotate(Math.PI * 2 / 18); c.beginPath(); c.moveTo(260, -14); c.lineTo(2200, -70); c.lineTo(2200, 70); c.lineTo(260, 14); c.fill(); }
   c.restore(); c.globalAlpha = 1;
   const k = seg(lt, 0, 0.14), sh = lt < 0.45 ? (rnd() - 0.5) * 28 * (1 - lt / 0.45) : 0;
