@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sirve play/ en http://localhost:8766 sin caché y aguantando las peticiones simultáneas del navegador."""
+"""Sirve play/ en el puerto 8766 (también para el móvil por la red local), sin caché y aguantando las peticiones simultáneas del navegador."""
 import http.server
 import os
 
@@ -20,4 +20,21 @@ class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
 
-Server(('127.0.0.1', 8766), Handler).serve_forever()
+def lan_ip():
+    """La IP de este equipo en la red local, para abrir el juego desde el móvil."""
+    import socket
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(('10.255.255.255', 1))
+        return probe.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        probe.close()
+
+
+print('Srak l zit en  http://localhost:8766')
+if lan_ip():
+    print(f'En el móvil (misma wifi):  http://{lan_ip()}:8766')
+# 0.0.0.0: accesible también desde otros dispositivos de la red local, para jugar en el móvil
+Server(('0.0.0.0', 8766), Handler).serve_forever()

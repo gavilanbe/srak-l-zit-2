@@ -262,6 +262,19 @@ export class Hud {
     this.rect(mx - 1, y - 3, 9, 9, INK); this.rect(mx, y - 2, 7, 7, '#e9edff'); this.rect(mx + 3, y - 2, 4, 4, INK); this.rect(mx + 1, y + 2, 2, 2, '#c9d0f2');
   }
 
+  disc(cx, cy, r, color) { this.g.fillStyle = color; cx = Math.round(cx); cy = Math.round(cy); for (let dy = -r; dy <= r; dy++) { const dx = Math.round(Math.sqrt(r * r - dy * dy)); this.g.fillRect(cx - dx, cy + dy, dx * 2 + 1, 1); } }
+  ring(cx, cy, r, color, k = 1) { // circunferencia de un píxel; k < 1 dibuja solo esa fracción, desde arriba y en el sentido del reloj
+    this.g.fillStyle = color; cx = Math.round(cx); cy = Math.round(cy); const n = Math.ceil(r * 7);
+    for (let i = 0; i < n * k; i++) { const a = -Math.PI / 2 + i / n * Math.PI * 2; this.g.fillRect(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 1, 1); }
+  }
+
+  // botón redondo de pantalla táctil, con relieve; down lo hunde
+  button(cx, cy, r, { color, light, dark, down = false }) {
+    cx = Math.round(cx); cy = Math.round(cy) + (down ? 1 : 0);
+    this.disc(cx + 1, cy + 3, r, 'rgba(4,3,14,0.45)'); this.disc(cx, cy, r, INK); this.disc(cx, cy, r - 1, dark); this.disc(cx, cy - (down ? 0 : 2), r - 2, color);
+    this.g.fillStyle = light; for (let dy = -(r - 3); dy < -(r >> 1); dy++) { const dx = Math.round(Math.sqrt((r - 3) ** 2 - dy * dy) * 0.7); this.g.fillRect(cx - dx, cy + dy - (down ? 0 : 2), dx * 2, 1); }
+  }
+
   // cortinilla de iris: todo negro menos un círculo de radio r
   iris(cx, cy, r) {
     const { W, H, g } = this; g.fillStyle = INK; cx = Math.round(cx);

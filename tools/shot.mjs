@@ -9,7 +9,9 @@ const app = readdirSync(`${cache}${dir}/${sub}`).find((d) => d.endsWith('.app'))
 const executablePath = `${cache}${dir}/${sub}/${app}/Contents/MacOS/${app.replace('.app', '')}`;
 const [out = '/tmp/srak.png', js = '', wait = '800'] = process.argv.slice(2);
 const browser = await chromium.launch({ executablePath, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
-const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+// MOBILE=1 emula un teléfono apaisado con pantalla táctil; MOBILE=portrait, en vertical
+const mob = process.env.MOBILE;
+const page = await browser.newPage(mob ? { viewport: mob === 'portrait' ? { width: 390, height: 844 } : { width: 844, height: 390 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true } : { viewport: { width: 1280, height: 720 } });
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log(`[${m.type()}]`, m.text()); });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 await page.goto('http://localhost:8766/');

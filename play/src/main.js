@@ -28,8 +28,8 @@ const FLY_TIME = 1.6, WINGS_MAX = 3; // segundos que dura un vuelo y alas (vuelo
 
 // La campaña: dos noches por sitio. Después del hanout, la casa se repite más difícil.
 const PLAN = [
-  { lv: 0, quota: 6, news: 'Roba zit sin que te vean. ESPACIO: saltito para esquivar' },
-  { lv: 0, quota: 8, glue: 2, bottle: true, news: 'Nuevo: ALAS. Salta y mantén ESPACIO. Cada vuelo gasta un ala' },
+  { lv: 0, quota: 6, news: ['Roba zit sin que te vean. ESPACIO: saltito para esquivar', 'Roba zit sin que te vean. Botón azul: saltito para esquivar'] },
+  { lv: 0, quota: 8, glue: 2, bottle: true, news: ['Nuevo: ALAS. Salta y mantén ESPACIO. Cada vuelo gasta un ala', 'Nuevo: ALAS. Salta y deja pulsado el botón azul. Cada vuelo gasta un ala'] },
   { lv: 1, quota: 6, glue: 2, news: 'Jeddi oye todo. Corre o vuela cerca de él y se despierta' },
   { lv: 1, quota: 8, cat: true, glue: 3, news: 'Nuevo: Mchicha, el gato. A oscuras, no hagas ruido' },
   { lv: 2, quota: 6, cat: true, chicks: 2, enemy: false, news: 'Las gallinas te ven de cerca. Escóndete o súbete a algo' },
@@ -113,6 +113,13 @@ const st = {
   res: null, tut: 0, reason: '', introSeen: false, cineT: 0, titleT0: 0, irisIn: 0,
   best: { score: 0, night: 0, ...JSON.parse(localStorage.getItem('srak-l-zit.best') || '{}') },
 };
+// Pantalla táctil: palanca flotante a la izquierda (a fondo = correr), botón de salto/vuelo y botón de soltar
+// a la derecha. Los botones pulsan las mismas «teclas» que el teclado, así el juego no distingue.
+const touch = { on: matchMedia('(pointer: coarse)').matches, stick: null, mx: 0, my: 0, mag: 0, a: null, bT: 0, zones: [], safe: { l: 0, r: 0, b: 0 } };
+const STICK_R = 26;
+const say2 = (desk, tap) => (touch.on ? tap : desk); // texto según se juegue con teclado o con el dedo
+const padA = () => ({ x: hud.W - 36 - touch.safe.r, y: hud.H - 38 - touch.safe.b, r: 22 });
+const padB = () => ({ x: hud.W - 86 - touch.safe.r, y: hud.H - 24 - touch.safe.b, r: 15 });
 const cam = new THREE.Vector3(-8, 0, 3);
 const keys = new Set(), pressed = new Set();
 const floaters = [];
@@ -165,7 +172,7 @@ function loadLevel(i) {
 
 function setupNight(n) {
   const p = plan(n), lit = !!world.alwaysLit;
-  Object.assign(st, { night: n, plan: p, quota: p.quota, stolen: 0, time: 0, nightLen: 86 + Math.min(n, 8) * 6, detect: 0, msgT: 0, seen: false, banner: null, res: null, news: p.news, lightOn: lit, lightT: 9, light: lit ? 1 : 0 });
+  Object.assign(st, { night: n, plan: p, quota: p.quota, stolen: 0, time: 0, nightLen: 86 + Math.min(n, 8) * 6, detect: 0, msgT: 0, seen: false, banner: null, res: null, news: Array.isArray(p.news) ? p.news[touch.on ? 1 : 0] : p.news, lightOn: lit, lightT: 9, light: lit ? 1 : 0 });
   resetRoach();
   G.kind = p.enemy === false ? 'none' : world.enemy;
   grannyMesh.visible = false; grannyMesh.rotation.set(0, 0, 0); world.doorGlow.visible = false;
@@ -302,11 +309,13 @@ function updateRoach(dt) {
   if (keys.has('ArrowRight') || keys.has('KeyD')) ix++;
   if (keys.has('ArrowUp') || keys.has('KeyW')) iy++;
   if (keys.has('ArrowDown') || keys.has('KeyS')) iy--;
+  let pace = 1;
+  if (touch.stick && touch.mag > 0.2) { ix = touch.mx; iy = -touch.my; pace = touch.mag > 0.9 ? 1 : clamp(touch.mag / 0.75, 0.5, 1); } // la palanca es analógica
   const il = Math.hypot(ix, iy) || 1;
   let dx = (gfx.floorRight.x * ix + gfx.floorUp.x * iy) / il, dz = (gfx.floorRight.z * ix + gfx.floorUp.z * iy) / il;
   const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
   R.moving = ix !== 0 || iy !== 0;
-  R.sprint = R.moving && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
+  R.sprint = R.moving && (keys.has('ShiftLeft') || keys.has('ShiftRight') || (!!touch.stick && touch.mag > 0.9));
 
   const wasGlued = R.glued;
   R.glued = R.y < 0.15 && world.glue.some((g) => g.on && dist(R.x, R.z, g.x, g.z) < g.r);
@@ -339,7 +348,7 @@ function updateRoach(dt) {
   const airborne = !grounded;
   R.wing = airborne ? 1 : Math.max(0, R.wing - dt * 8);
   {
-    const speed = (airborne ? 8.2 : 6.4 * (R.sprint ? 1.55 : 1)) * (1 - 0.1 * R.carry) * (R.glued ? 0.28 : 1);
+    const speed = (airborne ? 8.2 : 6.4 * (R.sprint ? 1.55 : pace)) * (1 - 0.1 * R.carry) * (R.glued ? 0.28 : 1);
     const tx = R.moving ? dx * speed : 0, tz = R.moving ? dz * speed : 0, k = Math.min(1, dt * (airborne ? 7 : 14));
     R.vx += (tx - R.vx) * k; R.vz += (tz - R.vz) * k;
   }
@@ -426,7 +435,7 @@ function updateRoach(dt) {
         }
         if (st.combo < 5) { st.combo++; floater(`combo x${st.combo}`, R.x, R.z - 0.8, '#ffb347'); }
         R.delivered = 0;
-        if (st.tut < 3) { st.tut = 3; say('E suelta una gota: quien la pise, resbala', 4); }
+        if (st.tut < 3) { st.tut = 3; say(say2('E suelta una gota: quien la pise, resbala', 'El botón dorado suelta una gota: quien la pise, resbala'), 4); }
       }
       if (st.stolen >= st.quota) clearNight();
     }
@@ -999,20 +1008,51 @@ function drawWorldMarks() {
 }
 
 const pxr = (a, b, w, h, c) => hud.rect(a, b, w, h, c);
+const zone = (x, y, w, h, act) => touch.zones.push({ x, y, w, h, act }); // zona tocable de este fotograma
+
+function drawTouch() {
+  const { W, H } = hud, t = st.clock, A = padA(), B = padB(), wings = st.plan.wings;
+  // palanca: aparece donde se apoya el pulgar; hasta entonces, una guía tenue en su esquina
+  const s = touch.stick, bx = s ? s.ox : 44 + touch.safe.l, by = s ? s.oy : H - 44 - touch.safe.b, run = !!s && touch.mag > 0.9;
+  hud.disc(bx, by, STICK_R, s ? 'rgba(11,11,18,0.4)' : 'rgba(11,11,18,0.22)');
+  hud.ring(bx, by, STICK_R, run ? GOLD : s ? 'rgba(253,246,227,0.8)' : 'rgba(253,246,227,0.35)'); hud.ring(bx, by, STICK_R - 1, run ? '#c98a00' : 'rgba(11,11,18,0.5)');
+  if (!s) for (const [ax, ay, ang] of [[0, -17, -Math.PI / 2], [0, 17, Math.PI / 2], [-17, 0, Math.PI], [17, 0, 0]]) hud.arrow(bx + ax, by + ay, ang, 'rgba(253,246,227,0.45)', 2);
+  const kx = bx + (s ? touch.mx * touch.mag * STICK_R : 0), ky = by + (s ? touch.my * touch.mag * STICK_R : 0);
+  hud.disc(kx + 1, ky + 2, 11, 'rgba(4,3,14,0.4)'); hud.disc(kx, ky, 11, INK); hud.disc(kx, ky, 10, run ? '#c98a00' : '#8f876c'); hud.disc(kx, ky - 1, 9, run ? GOLD : '#f4eedc'); hud.disc(kx - 2, ky - 4, 3, 'rgba(255,255,255,0.7)');
+  if (run) hud.text('correr', bx, by - STICK_R - 8, { color: GOLD });
+  // botón azul: saltar; en el aire, dejarlo pulsado vuela mientras queden alas
+  const down = touch.a !== null;
+  hud.button(A.x, A.y, A.r, { color: '#3d5fd0', light: '#8fb0ff', dark: '#1f2f7a', down });
+  hud.icon('wing', A.x - 4, A.y - 7 + (down ? 1 : 0), '#ffffff', '#1f2f7a'); hud.text(wings ? 'volar' : 'saltar', A.x, A.y + 7 + (down ? 1 : 0), { color: '#ffffff', outline: '#1f2f7a' });
+  if (R.fuel > 0) hud.ring(A.x, A.y, A.r + 3, '#7dd3fc', R.fuel / FLY_TIME);
+  if (wings) for (let i = 0; i < WINGS_MAX; i++) hud.wing(A.x - 14 + i * 10, A.y - A.r - 11, i < R.wings);
+  // botón dorado: soltar una gota
+  const has = R.carry > 0; touch.bT = Math.max(0, touch.bT - 0.016);
+  hud.button(B.x, B.y, B.r, has ? { color: '#e0a010', light: '#ffe98a', dark: '#7a4f00', down: touch.bT > 0 } : { color: '#4a4660', light: '#6f6a84', dark: '#2a2740', down: false });
+  hud.drop(B.x, B.y - 5, GOLD, !has); hud.text('soltar', B.x, B.y - B.r - 7, { color: has ? CREAM : '#7f79a8' });
+  // ruido y pausa
+  hud.plate(W / 2 - 14, H - 18 - touch.safe.b, 28, 16); hud.noise(W / 2 - 9, H - 16 - touch.safe.b, !R.alive ? 0 : R.noise > 7 ? 3 : R.noise > 3 ? 1 : 0);
+  const px = W - 21 - touch.safe.r, py = 47;
+  hud.plate(px - 9, py, 18, 16); hud.rect(px - 4, py + 4, 3, 8, CREAM); hud.rect(px + 1, py + 4, 3, 8, CREAM);
+  zone(px - 16, py - 6, 32, 30, () => { st.paused = true; });
+}
 
 function drawPlayHud() {
   const { W, H } = hud, cx = W / 2, t = st.clock;
   // zit robado y carga
+  hud.g.save(); hud.g.translate(touch.safe.l, 0);
   hud.plate(3, 3, 78, 40);
   hud.bottle(8, 8, st.stolen / st.quota, t);
   const pop = st.punchOil > 0, nw = hud.text(st.stolen, 27, 15 - (pop ? 2 : 0), { scale: 2, color: pop ? '#ffffff' : GOLD, align: 'left', shadow: '#7a3d00' });
   hud.text(`/${st.quota}`, 29 + nw, 18, { color: '#d9b25a', align: 'left' });
   for (let i = 0; i < CARRY_MAX; i++) hud.socket(27 + i * 13, 27, i < R.carry, t);
+  hud.g.restore();
   // la noche
   const k = clamp(st.time / st.nightLen, 0, 1), late = k > 0.8, bw = clamp(W - 240, 70, 130);
   hud.ribbon(late && Math.floor(t * 3) % 2 ? '¡AMANECE!' : `NOCHE ${st.night} · ${world.short}`, cx, 4, late ? { color: '#c1440e', dark: '#7a2606', light: '#ff8a4c' } : { color: '#2b3a8a', dark: '#161f55', light: '#5a6ad0' });
   hud.skybar(cx - bw / 2, 25, bw, k, t);
   // puntos, combo y vidas
+  hud.g.save(); hud.g.translate(-touch.safe.r, 0);
   hud.plate(W - 81, 3, 78, 40);
   hud.text(String(st.score).padStart(6, '0'), W - 9, 14 - (st.punchScore > 0 ? 1 : 0), { color: st.punchScore > 0 ? '#ffffff' : GOLD, align: 'right', shadow: '#7a3d00' });
   if (st.combo > 1) { hud.rect(W - 77, 8, 22, 13, INK); hud.rect(W - 76, 9, 20, 11, '#b3121d'); hud.rect(W - 76, 9, 20, 1, '#ff5a5a'); hud.text(`x${st.combo}`, W - 66, 14, { color: CREAM, outline: null }); }
@@ -1020,9 +1060,11 @@ function drawPlayHud() {
     if (i < st.lives) drawRoachSprite(pxr, W - 76 + i * 23, 25, 1, i === st.lives - 1 && R.alive ? Math.floor(t * 4) : 0);
     else { hud.rect(W - 74 + i * 23, 29, 16, 7, INK); hud.rect(W - 73 + i * 23, 30, 14, 5, '#2f2a52'); hud.rect(W - 71 + i * 23, 31, 10, 3, '#3d3760'); }
   }
+  hud.g.restore();
   // teclas: saltar o volar, soltar zit, correr y cuánto ruido haces
   const y = H - 20, wings = st.plan.wings, lw = wings ? 190 : 164;
-  if (st.mode === 'play' && !st.paused) {
+  if (st.mode === 'play' && !st.paused && touch.on) drawTouch();
+  else if (st.mode === 'play' && !st.paused) {
   hud.plate(3, y - 3, lw, 20);
   let x = 8; x += hud.keycap('ESP', x, y, true, keys.has('Space')) + 4;
   x += hud.text(wings ? 'volar' : 'saltar', x, y + 6, { align: 'left', color: CREAM, outline: null }) + 5;
@@ -1055,7 +1097,10 @@ function card(title, w, h, y0, opts = {}) {
 
 function drawCards() {
   const { W, H } = hud, cx = W / 2, t = st.modeT, blink = Math.floor(st.clock * 2) % 2;
-  const prompt = (label, key, y) => { const w = hud.width(label) + hud.width(key) + 22, x = Math.round(cx - w / 2); const kw = hud.keycap(key, x, y - 7, true, blink); hud.text(label, x + kw + 5, y - 1, { align: 'left', color: CREAM }); };
+  const prompt = (label, key, y) => {
+    if (touch.on) { if (blink) hud.text(`toca para ${label}`, cx, y - 1, { color: CREAM }); return; }
+    const w = hud.width(label) + hud.width(key) + 22, x = Math.round(cx - w / 2); const kw = hud.keycap(key, x, y - 7, true, blink); hud.text(label, x + kw + 5, y - 1, { align: 'left', color: CREAM });
+  };
   if (st.mode === 'intro') {
     const w = Math.min(W - 16, 296), news = hud.wrap(st.news, w - 76), c = card(`NOCHE ${st.night}`, w, 74 + news.length * 10, 0.26);
     hud.text(world.name, c.cx, c.y + 30, { scale: 2, color: GOLD, shadow: '#7a3d00' });
@@ -1097,9 +1142,19 @@ function drawCards() {
     hud.rect(0, 0, W, H, 'rgba(6,7,18,0.62)');
     const w = Math.min(W - 16, 250), x = Math.round(cx - w / 2), y = Math.round(H * 0.2);
     hud.panel(x, y, w, 128); hud.ribbon('PAUSA', cx, y - 9, { scale: 2, color: '#2b3a8a', dark: '#161f55', light: '#5a6ad0' });
-    [['WASD', 'moverse'], ['SHIFT', 'correr (hace ruido)'], ['ESP', 'saltar · en el aire, mantener: volar'], ['E', 'soltar una gota de zit'], ['M', 'silenciar'], ['P', 'seguir jugando']].forEach(([key, what], i) => {
-      const yy = y + 24 + i * 16; hud.keycap(key, x + 54 - hud.width(key) - 8, yy); hud.text(what, x + 60, yy + 6, { align: 'left', color: CREAM, outline: null });
-    });
+    if (touch.on) { // en el móvil: cómo se juega y dos botones grandes
+      [['palanca', 'moverse · a fondo, correr'], ['botón azul', 'saltar · dejarlo pulsado: volar'], ['botón dorado', 'soltar una gota de zit']].forEach(([a, b], i) => {
+        hud.text(a, x + 16, y + 28 + i * 14, { align: 'left', color: GOLD, outline: null }); hud.text(b, x + 16 + 76, y + 28 + i * 14, { align: 'left', color: CREAM, outline: null });
+      });
+      const bw = (w - 36) / 2, by = y + 78;
+      for (const [i, label, act] of [[0, 'SEGUIR', () => { st.paused = false; }], [1, sfx.muted ? 'SONIDO: NO' : 'SONIDO: SÍ', () => sfx.toggleMute()]]) {
+        const bx = x + 12 + i * (bw + 12); hud.plate(bx, by, bw, 34, { tone: i ? 'blue' : 'red' }); hud.text(label, bx + bw / 2, by + 17, { color: CREAM, outline: null }); zone(bx, by, bw, 34, act);
+      }
+    } else {
+      [['WASD', 'moverse'], ['SHIFT', 'correr (hace ruido)'], ['ESP', 'saltar · en el aire, mantener: volar'], ['E', 'soltar una gota de zit'], ['M', 'silenciar'], ['P', 'seguir jugando']].forEach(([key, what], i) => {
+        const yy = y + 24 + i * 16; hud.keycap(key, x + 54 - hud.width(key) - 8, yy); hud.text(what, x + 60, yy + 6, { align: 'left', color: CREAM, outline: null });
+      });
+    }
   }
 }
 
@@ -1108,7 +1163,9 @@ function letterbox(cap, bar = 26) {
   hud.rect(0, 0, W, bar, INK); hud.rect(0, H - bar, W, bar, INK);
   hud.rect(0, bar, W, 1, BORDER_C); hud.rect(0, H - bar - 1, W, 1, BORDER_C);
   if (cap) { const lines = hud.wrap(cap.slice(0, Math.floor(cine.t * 34)), W - 30); lines.forEach((l, i) => hud.text(l, W / 2, H - bar + (lines.length > 1 ? 8 : 13) + i * 10, { color: CREAM, outline: null })); }
-  hud.text('ENTER: saltar', W - 6, 12, { align: 'right', color: '#6a6f9a', outline: null });
+  if (touch.on) { // botón de saltar la escena: tocar en otro sitio no hace nada, para no saltársela sin querer
+    const x = W - 62 - touch.safe.r; hud.plate(x, 4, 58, 18); hud.text('SALTAR', x + 25, 13, { color: CREAM, outline: null }); hud.arrow(x + 50, 13, 0, GOLD, 2); zone(x - 6, 0, 70, 30, () => endCine());
+  } else hud.text('ENTER: saltar', W - 6, 12, { align: 'right', color: '#6a6f9a', outline: null });
 }
 
 function drawTitle() {
@@ -1124,9 +1181,10 @@ function drawTitle() {
   if (T > 3.4) for (let i = -7; i <= 7; i++) if (Math.abs(i) < (T - 3.4) * 20) hud.rect(cx + i * 9 - 1, dy + (i % 2 ? 1 : 0), 3, 3, i % 2 ? '#3fa7d6' : BORDER_C);
   if (T > 3.7) hud.text('la cucaracha que roba el aceite'.slice(0, Math.floor((T - 3.7) * 36)), cx, dy + 13, { color: '#ffd9a0' });
   if (T > 4.8) { // botón de empezar: una placa con su tecla
-    const bob = Math.round(Math.sin(t * 3) * 1.5), w = 104, x = Math.round(cx - w / 2), y = H - 66 + bob;
-    hud.plate(x, y, w, 22); const kw = hud.keycap('ENTER', x + 7, y + 4, true, Math.floor(t * 2) % 2);
-    hud.text('empezar', x + 12 + kw, y + 10, { align: 'left', color: CREAM, outline: null });
+    const bob = Math.round(Math.sin(t * 3) * 1.5), w = touch.on ? 126 : 104, x = Math.round(cx - w / 2), y = H - 66 + bob;
+    hud.plate(x, y, w, 22);
+    if (touch.on) hud.text('TOCA PARA EMPEZAR', cx, y + 11, { color: Math.floor(t * 2) % 2 ? CREAM : GOLD, outline: null });
+    else { const kw = hud.keycap('ENTER', x + 7, y + 4, true, Math.floor(t * 2) % 2); hud.text('empezar', x + 12 + kw, y + 10, { align: 'left', color: CREAM, outline: null }); }
     hud.text(st.best.score ? `récord: ${st.best.score} puntos · noche ${st.best.night}` : 'una noche en Marrakech', cx, H - 34, { color: '#b9b6e6' });
   }
 }
@@ -1196,8 +1254,15 @@ function drawCine() {
 }
 
 function drawHud() {
-  hud.clear();
+  hud.clear(); touch.zones.length = 0;
   const { W, H } = hud, cx = W / 2;
+  if (st.portrait) { // el juego es apaisado
+    hud.rect(0, 0, W, H, '#07061c');
+    const flip = Math.floor(st.clock * 1.2) % 2, pw = flip ? 44 : 24, ph = flip ? 24 : 44, py = Math.round(H * 0.38);
+    hud.rect(cx - pw / 2 - 1, py - ph / 2 - 1, pw + 2, ph + 2, GOLD); hud.rect(cx - pw / 2 + 1, py - ph / 2 + 1, pw - 2, ph - 2, '#1f1848'); hud.rect(cx - 2, py + ph / 2 - 4 + (flip ? 0 : 0), 4, 2, GOLD);
+    hud.text('GIRA EL MÓVIL', cx, py + 40, { color: GOLD }); hud.wrap('Srak l zit se juega en horizontal', W - 16).forEach((l, i) => hud.text(l, cx, py + 56 + i * 10, { color: CREAM }));
+    return;
+  }
   if (st.mode === 'title') return drawTitle();
   if (st.mode === 'cine') return drawCine();
 
@@ -1256,37 +1321,77 @@ function update(raw) {
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (!st.paused) update(dt);
+  if (!st.paused && !st.portrait) update(dt);
   pressed.clear();
   gfx.render(); drawHud();
   requestAnimationFrame(frame);
 }
 
 function resize() {
-  const scale = Math.max(1, Math.round(innerHeight / 230));
-  const W = Math.ceil(innerWidth / scale), H = Math.ceil(innerHeight / scale);
+  const dpr = window.devicePixelRatio || 1, vw = innerWidth, vh = innerHeight;
+  st.portrait = touch.on && vh > vw * 1.1;
+  // el alto del juego ronda siempre los 228 píxeles; la escala es un número entero de píxeles del dispositivo
+  const scale = Math.max(1, Math.round((st.portrait ? vw : vh) * dpr / 228)) / dpr;
+  const W = Math.ceil(vw / scale), H = Math.ceil(vh / scale);
   gfx.resize(W, H, scale); hud.resize(W, H, scale);
+  const css = getComputedStyle(document.documentElement), inset = (v) => Math.ceil((parseFloat(css.getPropertyValue(v)) || 0) / scale);
+  touch.safe = { l: inset('--sal'), r: inset('--sar'), b: inset('--sab') };
 }
 
+// ---------- pantalla táctil y ratón ----------
+function confirm() { // lo mismo que ENTER en menús y tarjetas
+  if (st.mode === 'title' || (st.mode === 'over' && st.modeT > 1)) startGame();
+  else if (st.mode === 'clear' && st.modeT > 2.9) nextNight();
+  else if (st.mode === 'intro' && st.modeT > 0.6) st.mode = 'play';
+}
+const near = (p, x, y, extra) => Math.hypot(x - p.x, y - p.y) < p.r + extra;
+
+addEventListener('pointerdown', (e) => {
+  sfx.init();
+  const isTouch = e.pointerType !== 'mouse', x = e.clientX / gfx.scale, y = e.clientY / gfx.scale;
+  if (isTouch && !touch.on) { touch.on = true; resize(); }
+  if (isTouch && document.documentElement.requestFullscreen && !document.fullscreenElement) { // pantalla completa y apaisado donde el navegador lo permita
+    document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {});
+  }
+  if (st.portrait) return;
+  const z = touch.zones.find((q) => x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h);
+  if (z) { z.act(); return; }
+  if (st.mode !== 'play' || st.paused) { if (st.mode !== 'cine' && !st.paused) confirm(); return; }
+  if (!isTouch) return;
+  if (near(padA(), x, y, 12)) { touch.a = e.pointerId; keys.add('Space'); pressed.add('Space'); }
+  else if (near(padB(), x, y, 10)) { pressed.add('KeyE'); touch.bT = 0.15; }
+  else if (x < hud.W * 0.55 && !touch.stick) { touch.stick = { id: e.pointerId, ox: clamp(x, STICK_R + 4, hud.W), oy: clamp(y, 50, hud.H - STICK_R - 4) }; touch.mag = 0; }
+});
+addEventListener('pointermove', (e) => {
+  const s = touch.stick; if (!s || e.pointerId !== s.id) return;
+  const x = e.clientX / gfx.scale, y = e.clientY / gfx.scale, dx = x - s.ox, dy = y - s.oy, d = Math.hypot(dx, dy);
+  if (d > STICK_R) { s.ox = x - dx / d * STICK_R; s.oy = y - dy / d * STICK_R; } // si el pulgar se sale, la base lo sigue
+  touch.mag = Math.min(1, d / STICK_R); if (d > 0.01) { touch.mx = dx / d; touch.my = dy / d; }
+});
+const release = (e) => {
+  if (touch.stick && e.pointerId === touch.stick.id) { touch.stick = null; touch.mag = 0; }
+  if (e.pointerId === touch.a) { touch.a = null; keys.delete('Space'); }
+};
+addEventListener('pointerup', release); addEventListener('pointercancel', release);
+addEventListener('contextmenu', (e) => e.preventDefault());
+addEventListener('orientationchange', () => setTimeout(resize, 200));
+
 addEventListener('resize', resize);
-addEventListener('blur', () => keys.clear());
-addEventListener('pointerdown', () => sfx.init());
+addEventListener('blur', () => { keys.clear(); touch.stick = null; touch.a = null; touch.mag = 0; });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('keydown', (e) => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
+  if (touch.on) { touch.on = false; resize(); } // si aparece un teclado, vuelven las teclas
   keys.add(e.code); pressed.add(e.code); sfx.init();
   if (e.code === 'KeyM') sfx.toggleMute();
   if ((e.code === 'Escape' || e.code === 'KeyP') && st.mode === 'play') st.paused = !st.paused;
   if (e.code === 'Enter' || (e.code === 'Space' && st.mode !== 'play')) {
-    if (st.mode === 'title' || (st.mode === 'over' && st.modeT > 1)) startGame();
-    else if (st.mode === 'cine') endCine();
-    else if (st.mode === 'clear' && st.modeT > 2.9) nextNight();
-    else if (st.mode === 'intro' && st.modeT > 0.6) st.mode = 'play';
+    if (st.mode === 'cine') endCine(); else confirm();
   }
 });
 
 resize();
 loadLevel(0); resetRoach();
 requestAnimationFrame(frame);
-window.game = { sfx, st, R, G, K, C, S, P, LV, gfx, keys, pressed, slicks, cine, get world() { return world; }, startGame, startNight, goNight, playEnding, update, killRoach, setLight, clearNight, endCine };
+window.game = { sfx, touch, st, R, G, K, C, S, P, LV, gfx, keys, pressed, slicks, cine, get world() { return world; }, startGame, startNight, goNight, playEnding, update, killRoach, setLight, clearNight, endCine };
