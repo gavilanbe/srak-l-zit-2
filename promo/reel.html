@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Srak l zit — reel</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #07061c; }
+  #game { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; border: 0; }
+  #fx { position: absolute; left: 0; top: 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <iframe id="game" src="../play/index.html?promo&scale=6"></iframe>
+  <canvas id="fx" width="1080" height="1920"></canvas>
+</div>
+<script type="module" src="reel.js"></script>
+</body>
+</html>

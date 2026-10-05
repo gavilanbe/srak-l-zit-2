@@ -17,6 +17,8 @@ const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const ease = (k) => 1 - (1 - k) ** 3;
 const ARABIC = 'bold {s}px "Geeza Pro", "Noto Naskh Arabic", "Segoe UI", sans-serif';
 
+// ?promo: la página del vídeo promocional maneja el juego fotograma a fotograma (sin bucle propio, sin interfaz, sin caché)
+const QUERY = new URLSearchParams(location.search), PROMO = QUERY.has('promo');
 const gfx = new Gfx(document.getElementById('view'));
 const hud = new Hud(document.getElementById('hud'));
 const sfx = new Sfx();
@@ -879,6 +881,7 @@ function updateCamera(dt, raw) {
     if (step.cam2) { const q = clamp(cine.t / step.dur, 0, 1); tx = lerp(tx, step.cam2[0], q); tz = lerp(tz, step.cam2[1], q); zoom = lerp(zoom, step.cam2[2], q); rate = 9; }
   }
   else if (st.mode === 'title' || step) { tx = cam.x; tz = cam.z; }
+  else if (st.mode === 'promo') { [tx, tz, zoom] = st.promoCam; ty = st.promoCam[3] || 0; rate = st.promoCam[4] || 4; }
   else if (st.mode === 'clear') { tx = world.hole.x + 3.6; tz = world.hole.z + 1.6; zoom = 1.6; rate = 3; }
   else {
     tx = clamp(R.x + R.vx * 0.25, -12, 12); tz = clamp(R.z + R.vz * 0.25, -7.5, 7.5); ty = R.y * 0.7;
@@ -943,7 +946,7 @@ function syncMeshes(dt) {
     animChicken(c.mesh, c.state, st.clock, c.walk, c.state === 'peck' ? 1 - c.t / c.dur : 0);
   }
 
-  const inWorld = ['play', 'intro', 'dawn', 'over'].includes(st.mode);
+  const inWorld = ['play', 'intro', 'dawn', 'over', 'promo'].includes(st.mode);
   for (const c of world.covers) {
     const ghost = !!c.hides && inWorld;
     if (c.ghost === ghost) continue;
@@ -1304,6 +1307,7 @@ function drawHud() {
     hud.text('GIRA EL MÓVIL', cx, py + 40, { color: GOLD }); hud.wrap('Srak l zit se juega en horizontal', W - 16).forEach((l, i) => hud.text(l, cx, py + 56 + i * 10, { color: CREAM }));
     return;
   }
+  if (st.mode === 'promo') return;
   if (st.mode === 'title') return drawTitle();
   if (st.mode === 'cine') return drawCine();
 
@@ -1344,6 +1348,7 @@ function update(raw) {
       if (st.lives <= 0) endRun('Salió el sol y la colonia se quedó sin zit.'); else { st.mode = 'dawn'; st.modeT = 0; }
     }
   } else if (st.mode === 'cine') updateCine(dt);
+  else if (st.mode === 'promo') st.promoStep?.(dt); // el vídeo promocional mueve los actores a mano
   else {
     st.modeT += dt;
     if (st.mode === 'intro' && st.modeT > 3.4) st.mode = 'play';
@@ -1362,7 +1367,7 @@ function update(raw) {
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (!st.paused && !st.portrait) update(dt);
+  if (!st.paused && !st.portrait && !PROMO) update(dt);
   pressed.clear();
   gfx.render(); drawHud();
   requestAnimationFrame(frame);
@@ -1372,7 +1377,7 @@ function resize() {
   const dpr = window.devicePixelRatio || 1, vw = innerWidth, vh = innerHeight;
   st.portrait = touch.on && vh > vw * 1.1;
   // el alto del juego ronda siempre los 228 píxeles; la escala es un número entero de píxeles del dispositivo
-  const scale = Math.max(1, Math.round((st.portrait ? vw : vh) * dpr / 228)) / dpr;
+  const scale = +QUERY.get('scale') || Math.max(1, Math.round((st.portrait ? vw : vh) * dpr / 228)) / dpr;
   const W = Math.ceil(vw / scale), H = Math.ceil(vh / scale);
   gfx.resize(W, H, scale); hud.resize(W, H, scale);
   const css = getComputedStyle(document.documentElement), inset = (v) => Math.ceil((parseFloat(css.getPropertyValue(v)) || 0) / scale);
@@ -1433,7 +1438,7 @@ if (navigator.audioSession) navigator.audioSession.type = 'playback'; // en iPho
 navigator.storage?.persist?.().catch(() => {});                       // que el sistema no borre la partida guardada
 // Service worker: guarda el juego para jugar sin conexión. Una versión nueva se descarga en segundo plano y se queda
 // esperando; el juego lo avisa con un botón y solo al aceptarlo se activa y se recarga, sin cortar la partida.
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && !PROMO) {
   const sw = navigator.serviceWorker, waiting = (reg) => { if (reg.waiting && sw.controller) app.update = reg.waiting; };
   addEventListener('load', () => sw.register(location.search.includes('pwa=prod') ? 'sw.js?prod' : 'sw.js').then((reg) => {
     app.reg = reg; waiting(reg);
@@ -1466,4 +1471,4 @@ addEventListener('keydown', (e) => {
 resize();
 loadLevel(0); resetRoach();
 requestAnimationFrame(frame);
-window.game = { sfx, touch, app, applyUpdate, st, R, G, K, C, S, P, LV, gfx, keys, pressed, slicks, cine, get world() { return world; }, startGame, startNight, goNight, playEnding, update, killRoach, setLight, clearNight, endCine };
+window.game = { babies, cam, burst, ring, updateSlipper, get granny() { return grannyMesh; }, sfx, touch, app, applyUpdate, st, R, G, K, C, S, P, LV, gfx, keys, pressed, slicks, cine, get world() { return world; }, startGame, startNight, goNight, playEnding, update, killRoach, setLight, clearNight, endCine };
