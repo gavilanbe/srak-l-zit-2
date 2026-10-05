@@ -103,6 +103,15 @@ export class Gfx {
     c.updateProjectionMatrix();
   }
 
+  // Cambia el ángulo de la cámara (el juego usa siempre 45° y 40°; las escenas del vídeo, otros).
+  setView(yawDeg, pitchDeg) {
+    const yaw = THREE.MathUtils.degToRad(yawDeg), pitch = THREE.MathUtils.degToRad(pitchDeg);
+    this.dir.set(Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw));
+    this.camera.position.copy(this.dir).multiplyScalar(this.camDist); this.camera.lookAt(0, 0, 0); this.camera.updateMatrixWorld();
+    this.right.setFromMatrixColumn(this.camera.matrixWorld, 0); this.up.setFromMatrixColumn(this.camera.matrixWorld, 1);
+    this.floorRight.set(this.right.x, 0, this.right.z).normalize(); this.floorUp.set(this.up.x, 0, this.up.z).normalize();
+  }
+
   setZoom(z) { if (this.camera.zoom !== z) { this.camera.zoom = z; this.camera.updateProjectionMatrix(); } }
 
   // Coloca la cámara ajustada a la rejilla de píxeles y compensa el resto moviendo el canvas.

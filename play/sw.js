@@ -1,6 +1,6 @@
 // Generado por tools/pwa.mjs. No editar: cambia tools/pwa.mjs y vuelve a ejecutarlo.
 // Service worker de Srak l zit: guarda el juego entero para abrirlo sin conexión y gestiona las versiones.
-const VERSION = '2026.10.05-f3f0d9e';
+const VERSION = '2026.10.05-93a0e66';
 const CACHE = 'srak-l-zit-' + VERSION;
 const FILES = ["./","src/version.js","apple-touch-icon.png","favicon-32.png","icon-192.png","icon-512.png","icon-maskable-192.png","icon-maskable-512.png","manifest.json","src/actors.js","src/art.js","src/audio.js","src/font.js","src/gfx.js","src/hud.js","src/main.js","src/world.js","vendor/three.core.js","vendor/three.module.js","index.html"];
 // En el ordenador de desarrollo se pide siempre a la red (para ver los cambios al recargar);
