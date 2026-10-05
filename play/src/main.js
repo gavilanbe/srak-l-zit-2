@@ -1221,8 +1221,9 @@ function update(raw) {
   // música: tema del sitio y capa según el peligro
   const chase = G.state === 'hunt' || K.state === 'alert' || K.state === 'pounce' || C.some((c) => c.on && (c.state === 'chase' || c.state === 'peck'));
   if (st.mode === 'play') sfx.music(world.theme, chase ? 2 : (grannyMesh.visible && G.state !== 'doze') || C.some((c) => c.on) ? 1 : 0);
-  else if (st.mode === 'cine') sfx.music(cine.steps[cine.i].art === 'dawn' ? 'dawn' : cine.steps[cine.i].cam ? world.theme : 'title', 0);
-  else sfx.music(st.mode === 'title' || st.mode === 'over' ? 'title' : world.theme, 0);
+  else if (st.mode === 'cine') { const cs = cine.steps[cine.i]; if (cs.art) sfx.music(cs.art === 'dawn' ? 'dawn' : 'title', 1); else sfx.music(world.theme, 0); }
+  else if (st.mode === 'title') sfx.music('title', 1);          // la portada, con la orquesta entera
+  else sfx.music(st.mode === 'over' ? 'title' : world.theme, st.mode === 'clear' ? 1 : 0);
   if (st.freeze > 0) { st.freeze -= raw; updateCamera(0, raw); return; }
   st.slow = Math.max(0, st.slow - raw);
   const dt = raw * (st.slow > 0 ? 0.3 : 1);
